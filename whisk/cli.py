@@ -482,22 +482,32 @@ def serve(
         "-c",
         help="Path to config file"
     ),
+    enable_nats: bool = typer.Option(
+        False,
+        "--nats",
+        help="Enable NATS server"
+    )
 ):
     """Serve the KitchenAI app via FastAPI and/or NATS"""
-    config = WhiskConfig.from_file(config_file) if config_file else WhiskConfig.from_env()
+    # Load config with defaults if not specified
+    config = WhiskConfig.from_file(config_file) if config_file else WhiskConfig()
+    
+    # Override NATS settings based on flag
+    if not enable_nats:
+        config.server.type = "fastapi"
+        config.server.nats = None
     
     # Import the kitchen module
     module_path, attr = kitchen.split(":")
     kitchen_module = importlib.import_module(module_path)
     kitchen = getattr(kitchen_module, attr)
     
-    # Create FastAPI app if needed
-    app = FastAPI() if config.server.type in ["fastapi", "both"] else None
-    
-    # Setup router
+    # Create FastAPI app
+    app = FastAPI()
     router = WhiskRouter(kitchen, config, app)
     router.mount()
     
+    # Run server(s)
     if config.server.type in ["fastapi", "both"]:
         import uvicorn
         uvicorn.run(
@@ -505,8 +515,5 @@ def serve(
             host=config.server.fastapi.host,
             port=config.server.fastapi.port
         )
-    else:
-        # Run NATS-only mode
-        asyncio.run(router.nats_router.run())
 
 

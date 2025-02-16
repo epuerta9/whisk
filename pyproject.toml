@@ -12,14 +12,15 @@ license = "MIT"
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.7.0",
-    "fastapi",
-    "faststream[nats]>=0.4.5",
+    "fastapi>=0.100.0",
+    "faststream[nats]>=0.4.0",
     "anyio>=3.7.1",
     "watchfiles",
-    "httpx",
-    "pyyaml>=6.0",
+    "httpx>=0.26.0",
+    "pyyaml>=6.0.0",
     "pydantic>=2.0.0",
     "cookiecutter>=2.5.0",
+    "uvicorn>=0.27.0",
 ]
 [tool.hatch.build.targets.wheel]
 include = [
@@ -103,4 +104,12 @@ commit_parsers = [
 protect_breaking_commits = false
 filter_commits = false
 topo_order = false
-sort_commits = "oldest" 
+sort_commits = "oldest"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+] 

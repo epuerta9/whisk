@@ -23,10 +23,12 @@ class WhiskRouter:
     ):
         self.kitchen = kitchen
         self.config = config
-        self.app = fastapi_app or FastAPI()
+        self.app = fastapi_app
         
-        # Initialize NATS router if needed
-        if config.server.type in ["nats", "both"]:
+        # Initialize NATS router only if explicitly configured
+        if (config.server.type in ["nats", "both"] and 
+            config.server.nats is not None and 
+            config.client and config.client.id):
             self.nats_router = NatsRouter(
                 config.nats.url,
                 user=config.nats.user,
