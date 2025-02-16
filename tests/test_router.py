@@ -4,21 +4,23 @@ from fastapi.testclient import TestClient
 from whisk.router import WhiskRouter
 from whisk.config import WhiskConfig, ServerConfig, FastAPIConfig, NatsConfig, ClientConfig
 from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
-from whisk.kitchenai_sdk.schema import WhiskQuerySchema
+from whisk.kitchenai_sdk.schema import WhiskQuerySchema, ChatCompletionRequest, ChatCompletionResponse
 
 # Test fixtures
 @pytest.fixture
 def kitchen():
     app = KitchenAIApp()
     
-    @app.query.handler("chat")
-    async def handle_chat(query: WhiskQuerySchema):
-        if query.stream:
-            async def stream_gen():
-                for chunk in ["Hello", " World"]:
-                    yield {"output": chunk}
-            return {"stream_gen": stream_gen}
-        return {"output": f"Response to: {query.query}"}
+    @app.chat.handler("chat.completions")
+    async def handle_chat(request: ChatCompletionRequest):
+        return ChatCompletionResponse(
+            model=request.model,
+            choices=[{
+                "index": 0,
+                "message": {"role": "assistant", "content": "test response"},
+                "finish_reason": "stop"
+            }]
+        )
     
     return app
 

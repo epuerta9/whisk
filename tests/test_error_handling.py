@@ -1,15 +1,21 @@
 import pytest
 from whisk.kitchenai_sdk.schema import WhiskStorageStatus, DependencyType
+from whisk.kitchenai_sdk.schema import ChatCompletionRequest, ChatMessage
 
 @pytest.mark.asyncio
-async def test_query_handler_error(kitchen, query_data):
-    @kitchen.query.handler("query")
-    async def query_handler(data):
+async def test_query_handler_error(kitchen):
+    @kitchen.chat.handler("chat.completions")
+    async def handle_chat(request: ChatCompletionRequest):
         raise ValueError("Test error")
     
-    handler = kitchen.query.get_task("query")
+    request = ChatCompletionRequest(
+        messages=[ChatMessage(role="user", content="Hello")],
+        model="test-model"
+    )
+    
     with pytest.raises(ValueError):
-        await handler(query_data)
+        handler = kitchen.chat.get_task("chat.completions")
+        await handler(request)
 
 @pytest.mark.asyncio
 async def test_storage_handler_error(kitchen, storage_data):

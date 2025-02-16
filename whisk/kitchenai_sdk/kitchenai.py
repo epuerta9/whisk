@@ -1,4 +1,4 @@
-from whisk.kitchenai_sdk.taxonomy.query import QueryTask
+from whisk.kitchenai_sdk.taxonomy.chat import ChatTask
 from whisk.kitchenai_sdk.taxonomy.storage import StorageTask
 from whisk.kitchenai_sdk.taxonomy.embeddings import EmbedTask
 from whisk.kitchenai_sdk.taxonomy.agent import AgentTask
@@ -14,7 +14,7 @@ class KitchenAIApp:
         self.client_type = 'bento_box'
         self.client_description = 'Bento box'
         self.manager = DependencyManager()
-        self.query = QueryTask(namespace, self.manager)
+        self.chat = ChatTask(namespace, self.manager)
         self.storage = StorageTask(namespace, self.manager)
         self.embeddings = EmbedTask(namespace, self.manager)
         self.agent = AgentTask(namespace, self.manager)
@@ -31,13 +31,12 @@ class KitchenAIApp:
         self._mounted_apps[prefix] = app
         
         # Merge handlers with prefixed labels
-        query_tasks = app.query.list_tasks()
-        if isinstance(query_tasks, list):
-            # Convert list to dict using task.__name__ as key
-            query_tasks = {task.__name__: task for task in query_tasks}
-        for label, handler in query_tasks.items():
+        chat_tasks = app.chat.list_tasks()
+        if isinstance(chat_tasks, list):
+            chat_tasks = {task.__name__: task for task in chat_tasks}
+        for label, handler in chat_tasks.items():
             prefixed_label = f"{prefix}.{label}"
-            self.query.register_task(prefixed_label, handler)
+            self.chat.register_task(prefixed_label, handler)
             
         storage_tasks = app.storage.list_tasks()
         if isinstance(storage_tasks, list):
@@ -63,17 +62,17 @@ class KitchenAIApp:
     def set_manager(self, manager):
         """Update the manager for the app and all tasks."""
         self.manager = manager
-        self.query._manager = manager
+        self.chat._manager = manager
         self.storage._manager = manager
         self.embeddings._manager = manager
         self.agent._manager = manager
 
-    def to_dict(self):
-        """Generate a summary of all registered tasks."""
+    def to_dict(self) -> dict:
+        """Convert app configuration to dictionary format"""
         return {
             "namespace": self.namespace,
-            "query_handlers": list(self.query.list_tasks().keys()),
-            "storage_handlers": list(self.storage.list_tasks().keys()),
-            "embed_handlers": list(self.embeddings.list_tasks().keys()),
-            "agent_handlers": list(self.agent.list_tasks().keys()),
+            "chat_handlers": list(self.chat.list_tasks()),
+            "storage_handlers": list(self.storage.list_tasks()),
+            "embed_handlers": list(self.embeddings.list_tasks()),
+            "agent_handlers": list(self.agent.list_tasks())
         }

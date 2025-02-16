@@ -4,7 +4,9 @@ from whisk.kitchenai_sdk.schema import (
     WhiskQuerySchema,
     WhiskStorageSchema,
     WhiskQueryBaseResponseSchema,
-    WhiskStorageResponseSchema
+    WhiskStorageResponseSchema,
+    ChatCompletionRequest,
+    ChatCompletionResponse
 )
 from whisk.client import WhiskClient
 from whisk.kitchenai_sdk.nats_schema import NatsRegisterMessage, BentoBox
@@ -13,9 +15,16 @@ from whisk.kitchenai_sdk.nats_schema import NatsRegisterMessage, BentoBox
 def app():
     app = KitchenAIApp(namespace="test")
     
-    @app.query.handler("query")
-    async def query_handler(data: WhiskQuerySchema) -> WhiskQueryBaseResponseSchema:
-        return WhiskQueryBaseResponseSchema(input=data.query, output="test")
+    @app.chat.handler("chat.completions")
+    async def handle_chat(request: ChatCompletionRequest):
+        return ChatCompletionResponse(
+            model=request.model,
+            choices=[{
+                "index": 0,
+                "message": {"role": "assistant", "content": "test"},
+                "finish_reason": "stop"
+            }]
+        )
     
     @app.storage.handler("storage")
     async def storage_handler(data: WhiskStorageSchema) -> WhiskStorageResponseSchema:
@@ -27,12 +36,11 @@ def test_to_dict_returns_lists(app):
     """Test that to_dict returns lists for handlers as required by NatsRegisterMessage"""
     result = app.to_dict()
     
-    assert isinstance(result["query_handlers"], list)
+    assert "chat_handlers" in result
+    assert isinstance(result["chat_handlers"], list)
+    assert "chat.completions" in result["chat_handlers"]
+    assert "storage_handlers" in result
     assert isinstance(result["storage_handlers"], list)
-    assert isinstance(result["embed_handlers"], list)
-    assert isinstance(result["agent_handlers"], list)
-    
-    assert "query" in result["query_handlers"]
     assert "storage" in result["storage_handlers"]
 
 @pytest.mark.asyncio
@@ -56,7 +64,7 @@ async def test_client_registration(app):
         client_description=app.client_description
     )
     
-    assert isinstance(message.bento_box.query_handlers, list)
+    assert isinstance(message.bento_box.chat_handlers, list)
     assert isinstance(message.bento_box.storage_handlers, list)
-    assert "query" in message.bento_box.query_handlers
+    assert "chat.completions" in message.bento_box.chat_handlers
     assert "storage" in message.bento_box.storage_handlers 

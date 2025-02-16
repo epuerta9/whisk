@@ -689,3 +689,133 @@ async def rag_answer(data: WhiskQuerySchema, llm=None, client: WhiskClient=None)
         raise
 
     # Continue with embedding and response generation...
+```
+
+## OpenAI-Compatible API
+
+Whisk provides OpenAI-compatible endpoints that can be used with any OpenAI client library or tool (like OpenWebUI, ChatBot UI, etc.).
+
+## Endpoints
+
+- `/v1/chat/completions` - Chat completions API
+- `/v1/models` - List available models
+- `/v1/files` - File upload and management
+
+## Passing Metadata
+
+When using OpenAI-compatible clients, you can pass additional metadata through the system message in two formats:
+
+### 1. JSON Format
+
+```json
+{
+  "model": "whisk-default",
+  "messages": [
+    {
+      "role": "system",
+      "content": "METADATA: {\"doc_id\": \"123\", \"namespace\": \"test\"}"
+    },
+    {
+      "role": "user",
+      "content": "Hello!"
+    }
+  ]
+}
+```
+
+### 2. Key-Value Format
+
+```
+Your system prompt here...
+
+#METADATA
+doc_id=123
+namespace=test
+```
+
+## Using with OpenAI Clients
+
+### Python
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="your-key",
+    base_url="http://localhost:8000/v1"  # Your Whisk server
+)
+
+response = client.chat.completions.create(
+    model="whisk-default",
+    messages=[
+        {
+            "role": "system",
+            "content": "METADATA: {\"doc_id\": \"123\"}"
+        },
+        {
+            "role": "user",
+            "content": "Hello!"
+        }
+    ]
+)
+```
+
+### cURL
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "whisk-default",
+    "messages": [
+      {
+        "role": "system",
+        "content": "METADATA: {\"doc_id\": \"123\"}"
+      },
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  }'
+```
+
+### OpenWebUI
+
+1. Set the API Base URL to your Whisk server (e.g., `http://localhost:8000/v1`)
+2. In the system prompt, include your metadata:
+   ```
+   Your system instructions...
+
+   #METADATA
+   doc_id=123
+   namespace=test
+   ```
+
+## Available Models
+
+- `whisk-default` - Default Whisk model
+
+## File Management
+
+Upload files for use with your Whisk instance:
+
+```bash
+curl http://localhost:8000/v1/files \
+  -F "file=@myfile.txt" \
+  -F "purpose=fine-tune"
+```
+
+List uploaded files:
+
+```bash
+curl http://localhost:8000/v1/files
+```
+
+This documentation:
+1. Explains the available endpoints
+2. Shows both metadata formats
+3. Provides examples for different clients
+4. Includes file management instructions
+
+Would you like me to add or modify anything in the documentation?

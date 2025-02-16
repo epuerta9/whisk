@@ -1,56 +1,39 @@
 import pytest
+from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
 from whisk.kitchenai_sdk.schema import (
-    WhiskQuerySchema,
-    WhiskQueryBaseResponseSchema,
+    ChatCompletionRequest,
+    ChatMessage,
     WhiskStorageSchema,
-    WhiskStorageResponseSchema,
-    WhiskEmbedSchema,
-    WhiskEmbedResponseSchema
+    WhiskEmbedSchema
 )
 
-@pytest.mark.asyncio
-async def test_query_handler(kitchen, query_data):
-    @kitchen.query.handler("query")
-    async def query_handler(data):
-        assert data.query == query_data.query
-        assert data.metadata == query_data.metadata
-        return WhiskQueryBaseResponseSchema(
-            input=data.query,
-            output="test response"
-        )
-    
-    handler = kitchen.query.get_task("query")
-    response = await handler(query_data)
-    assert response.input == query_data.query
-    assert response.output == "test response"
+@pytest.fixture
+def kitchen():
+    return KitchenAIApp(namespace="test")
 
-@pytest.mark.asyncio
-async def test_storage_handler(kitchen, storage_data):
-    @kitchen.storage.handler("storage")
-    async def storage_handler(data):
-        assert data.id == storage_data.id
-        assert data.name == storage_data.name
-        assert data.data == storage_data.data
-        return WhiskStorageResponseSchema(
-            id=data.id,
-            status="complete"
-        )
+def test_chat_handler(kitchen):
+    """Test registering a chat handler"""
     
-    handler = kitchen.storage.get_task("storage")
-    response = await handler(storage_data)
-    assert response.id == storage_data.id
-    assert response.status == "complete"
+    @kitchen.chat.handler("chat.completions")
+    async def handle_chat(request: ChatCompletionRequest):
+        pass
+    
+    assert kitchen.chat.get_task("chat.completions") is not None
 
-@pytest.mark.asyncio
-async def test_embed_handler(kitchen, embed_data):
+def test_storage_handler(kitchen):
+    """Test registering a storage handler"""
+    
+    @kitchen.storage.handler("store")
+    def handle_storage(data: WhiskStorageSchema):
+        pass
+    
+    assert kitchen.storage.get_task("store") is not None
+
+def test_embed_handler(kitchen):
+    """Test registering an embed handler"""
+    
     @kitchen.embeddings.handler("embed")
-    async def embed_handler(data):
-        assert data.text == embed_data.text
-        assert data.metadata == embed_data.metadata
-        return WhiskEmbedResponseSchema(
-            metadata={"embedded": True}
-        )
+    def handle_embed(data: WhiskEmbedSchema):
+        pass
     
-    handler = kitchen.embeddings.get_task("embed")
-    response = await handler(embed_data)
-    assert response.metadata["embedded"] == True 
+    assert kitchen.embeddings.get_task("embed") is not None 

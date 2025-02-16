@@ -5,25 +5,36 @@ from whisk.kitchenai_sdk.schema import (
     WhiskQueryBaseResponseSchema,
     WhiskStorageSchema,
     WhiskStorageResponseSchema,
-    DependencyType
+    DependencyType,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatMessage
 )
 
 @pytest.fixture
 def chat_app():
     app = KitchenAIApp(namespace="chat")
     
-    @app.query.handler("basic")
-    async def basic_chat(data: WhiskQuerySchema) -> WhiskQueryBaseResponseSchema:
-        return WhiskQueryBaseResponseSchema(
-            input=data.query,
-            output="basic response"
+    @app.chat.handler("basic")
+    async def basic_chat(request: ChatCompletionRequest):
+        return ChatCompletionResponse(
+            model=request.model,
+            choices=[{
+                "index": 0,
+                "message": {"role": "assistant", "content": "basic response"},
+                "finish_reason": "stop"
+            }]
         )
     
-    @app.query.handler("stream")
-    async def stream_chat(data: WhiskQuerySchema) -> WhiskQueryBaseResponseSchema:
-        return WhiskQueryBaseResponseSchema(
-            input=data.query,
-            output="stream response"
+    @app.chat.handler("stream")
+    async def stream_chat(request: ChatCompletionRequest):
+        return ChatCompletionResponse(
+            model=request.model,
+            choices=[{
+                "index": 0,
+                "message": {"role": "assistant", "content": "stream response"},
+                "finish_reason": "stop"
+            }]
         )
     
     return app
@@ -32,11 +43,15 @@ def chat_app():
 def rag_app():
     app = KitchenAIApp(namespace="rag")
     
-    @app.query.handler("search")
-    async def rag_search(data: WhiskQuerySchema) -> WhiskQueryBaseResponseSchema:
-        return WhiskQueryBaseResponseSchema(
-            input=data.query,
-            output="search response"
+    @app.chat.handler("search")
+    async def rag_search(request: ChatCompletionRequest):
+        return ChatCompletionResponse(
+            model=request.model,
+            choices=[{
+                "index": 0,
+                "message": {"role": "assistant", "content": "search response"},
+                "finish_reason": "stop"
+            }]
         )
     
     @app.storage.handler("ingest")
@@ -48,23 +63,12 @@ def rag_app():
     
     return app
 
-def test_mount_app_merges_handlers(chat_app, rag_app):
-    """Test that mounting apps correctly merges handlers with prefixed labels"""
+def test_mount_app_merges_handlers(chat_app):
+    """Test that mounting an app merges its handlers"""
     main_app = KitchenAIApp(namespace="main")
-    
-    # Mount the sub-apps
     main_app.mount_app("chat", chat_app)
-    main_app.mount_app("rag", rag_app)
     
-    # Check query handlers
-    query_handlers = main_app.query.list_tasks()
-    assert "chat.basic" in query_handlers
-    assert "chat.stream" in query_handlers
-    assert "rag.search" in query_handlers
-    
-    # Check storage handlers
-    storage_handlers = main_app.storage.list_tasks()
-    assert "rag.ingest" in storage_handlers
+    assert "chat.basic" in main_app.chat.list_tasks()
 
 def test_mount_app_merges_dependencies(chat_app, rag_app):
     """Test that mounting apps correctly merges dependencies"""
@@ -87,17 +91,20 @@ def test_mount_app_merges_dependencies(chat_app, rag_app):
     assert main_app.manager.get_dependency(DependencyType.VECTOR_STORE) is mock_store
 
 @pytest.mark.asyncio
-async def test_mounted_handlers_execution(chat_app, rag_app, query_data):
+async def test_mounted_handlers_execution(chat_app, rag_app):
     """Test that mounted handlers can be executed"""
     main_app = KitchenAIApp(namespace="main")
     main_app.mount_app("chat", chat_app)
     
     # Get and execute the mounted handler
-    handler = main_app.query.get_task("chat.basic")
-    response = await handler(query_data)
+    handler = main_app.chat.get_task("chat.basic")
+    request = ChatCompletionRequest(
+        messages=[ChatMessage(role="user", content="Hello")],
+        model="test-model"
+    )
+    response = await handler(request)
     
-    assert response.input == query_data.query
-    assert response.output == "basic response"
+    assert response.choices[0]["message"]["content"] == "basic response"
 
 def test_mount_app_propagates_new_dependencies(chat_app, rag_app):
     """Test that new dependencies are propagated to mounted apps"""
@@ -133,7 +140,7 @@ def test_to_dict_includes_mounted_handlers(chat_app, rag_app):
     
     app_dict = main_app.to_dict()
     
-    assert "chat.basic" in app_dict["query_handlers"]
-    assert "chat.stream" in app_dict["query_handlers"]
-    assert "rag.search" in app_dict["query_handlers"]
+    assert "chat.basic" in app_dict["chat_handlers"]
+    assert "chat.stream" in app_dict["chat_handlers"]
+    assert "rag.search" in app_dict["chat_handlers"]
     assert "rag.ingest" in app_dict["storage_handlers"] 

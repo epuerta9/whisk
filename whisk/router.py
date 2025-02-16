@@ -60,73 +60,55 @@ class WhiskRouter:
         """Setup FastAPI routes including OpenAI-compatible endpoints"""
         @self.app.post(f"{self.config.server.fastapi.prefix}/chat/completions")
         async def chat_completions(request: ChatCompletionRequest):
-            task = self.kitchen.query.get_task("chat")
+            task = self.kitchen.chat.get_task("chat.completions")
             if not task:
-                raise HTTPException(404, "Chat handler not found")
-            
-            query = WhiskQuerySchema(
-                query=request.messages[-1].content,
-                stream=request.stream,
-                metadata={"model": request.model},
-                messages=request.messages,
-                label="chat"
-            )
+                raise HTTPException(status_code=404, detail="Chat handler not found")
             
             if request.stream:
                 return StreamingResponse(
-                    self._stream_response(task, query),
+                    self._stream_response(task, request),
                     media_type="text/event-stream"
                 )
             
-            response = await task(query)
-            return ChatCompletionResponse(
-                model=request.model,
-                choices=[
-                    ChatCompletionChoice(
-                        message=ChatResponseMessage(
-                            content=response["output"]
-                        )
-                    )
-                ]
-            )
+            response = await task(request)
+            return response
     
-    async def _stream_response(self, task, query):
+    async def _stream_response(self, task, request: ChatCompletionRequest):
         """Helper method to handle streaming responses"""
-        response = await task(query)
-        print(f"DEBUG: Response from task: {response}")  # Debug line
+        response = await task(request)
         
-        if "stream_gen" not in response:
-            # Format non-streaming response as SSE
-            yield f"data: {json.dumps(response)}\n\n"
-            return
-
-        # Ensure we have a generator
-        stream_gen = response["stream_gen"]
-        if not callable(stream_gen):
-            print(f"DEBUG: stream_gen is not callable: {stream_gen}")
-            return
-            
-        try:
-            async for chunk in stream_gen():
-                # Format each chunk as a StreamingChatCompletionResponse
-                stream_response = StreamingChatCompletionResponse(
-                    model=query.metadata.get("model", "unknown"),
-                    choices=[{
-                        "delta": {"content": chunk["output"]},
-                        "index": 0,
-                        "finish_reason": None
-                    }]
-                )
-                # Use model_dump instead of dict (Pydantic v2 recommendation)
-                response_str = f"data: {json.dumps(stream_response.model_dump())}\n\n"
-                print(f"DEBUG: Yielding chunk: {response_str}")  # Debug line
-                yield response_str
-            
-            # Send final [DONE] message
-            yield "data: [DONE]\n\n"
-        except Exception as e:
-            print(f"DEBUG: Error in streaming: {e}")
-            raise
+        # Format each chunk as SSE
+        for choice in response.choices:
+            chunk = {
+                "id": response.id,
+                "object": "chat.completion.chunk",
+                "created": response.created,
+                "model": response.model,
+                "choices": [{
+                    "index": choice["index"],
+                    "delta": {
+                        "role": "assistant",
+                        "content": choice["message"]["content"]
+                    },
+                    "finish_reason": None
+                }]
+            }
+            yield f"data: {json.dumps(chunk)}\n\n"
+        
+        # Send final chunk with finish_reason
+        final_chunk = {
+            "id": response.id,
+            "object": "chat.completion.chunk",
+            "created": response.created,
+            "model": response.model,
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": "stop"
+            }]
+        }
+        yield f"data: {json.dumps(final_chunk)}\n\n"
+        yield "data: [DONE]\n\n"
     
     def mount(self):
         """Mount all routes and start services"""

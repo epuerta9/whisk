@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from .schema import (
     WhiskQuerySchema,
@@ -12,7 +12,9 @@ from .schema import (
     TokenCountSchema,
     SourceNodeSchema,
     WhiskStorageGetRequestSchema,
-    WhiskStorageGetResponseSchema
+    WhiskStorageGetResponseSchema,
+    ChatCompletionRequest,
+    ChatCompletionResponse
 )
 
 # Base message schema
@@ -25,12 +27,12 @@ class NatsMessageBase(BaseModel):
     # version: str | None = None
 
 class BentoBox(BaseModel):
-    """Schema for bento box configuration"""
+    """Container for app handlers and configuration"""
     namespace: str
-    query_handlers: List[str]
-    storage_handlers: List[str]
-    embed_handlers: List[str]
-    agent_handlers: List[str]
+    chat_handlers: List[str] = Field(default_factory=list)
+    storage_handlers: List[str] = Field(default_factory=list)
+    embed_handlers: List[str] = Field(default_factory=list)
+    agent_handlers: List[str] = Field(default_factory=list)
 
 class NatsRegisterMessage(BaseModel):
     """Message for registering a client with KitchenAI"""
@@ -63,6 +65,10 @@ class BroadcastRequestMessage(NatsMessageBase, WhiskBroadcastSchema):
     """Schema for broadcast requests"""
     pass
 
+class ChatCompletionRequestMessage(NatsMessageBase, ChatCompletionRequest):
+    """Schema for chat completion requests"""
+    pass
+
 # Response Messages
 
 class StorageGetResponseMessage(NatsMessageBase, WhiskStorageGetResponseSchema):
@@ -89,4 +95,8 @@ class EmbedResponseMessage(NatsMessageBase, WhiskEmbedResponseSchema):
 
 class BroadcastResponseMessage(NatsMessageBase, WhiskBroadcastResponseSchema):
     """Schema for broadcast responses"""
+    error: Optional[str] = None
+
+class ChatCompletionResponseMessage(NatsMessageBase, ChatCompletionResponse):
+    """Schema for chat completion responses"""
     error: Optional[str] = None 

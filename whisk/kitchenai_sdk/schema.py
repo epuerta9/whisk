@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict, computed_field, Field, PrivateAttr
 from typing import List, Optional, Dict, Any, Callable
 from enum import StrEnum, auto
+import time
 
 
 class TokenCountSchema(BaseModel):
@@ -10,22 +11,80 @@ class TokenCountSchema(BaseModel):
     total_llm_tokens: Optional[int] = None
 
 
+class SourceNodeSchema(BaseModel):
+    text: str
+    metadata: Dict[str, Any]
+    score: float
+
+
+# Keep existing schemas for backward compatibility
 class WhiskQuerySchema(BaseModel):
     query: str
     stream: bool = False
     stream_id: Optional[str] = None
     metadata: Optional[Dict[str, str]] = None
-    label: Optional[str]
-
-    # OpenAI Chat Completion Schema as optional for more context. Will come is as a dict.
+    label: Optional[str] = None
     messages: Optional[List[object]] = None
 
+# New OpenAI-compatible schemas
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+    name: Optional[str] = None
 
+class ChatCompletionRequest(BaseModel):
+    messages: List[ChatMessage]
+    model: str = "default"
+    stream: bool = False
+    stream_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = None
 
-class SourceNodeSchema(BaseModel):
-    text: str
-    metadata: Dict
-    score: float
+class ChatCompletionResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    id: str = Field(default_factory=lambda: f"chatcmpl-{int(time.time())}")
+    object: str = "chat.completion"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    model: str
+    choices: List[Dict[str, Any]]  # Standard OpenAI format
+    usage: Optional[Dict[str, int]] = None
+    system_fingerprint: Optional[str] = None
+    
+    # Internal fields for RAG/Agent context
+    _retrieval_context: Optional[List[SourceNodeSchema]] = PrivateAttr(default=None)
+    
+    def add_rag_context(self, context: List[SourceNodeSchema]):
+        """Add RAG context to the response"""
+        self._retrieval_context = context
+        # Add context to the message content in a structured way
+        if self.choices and len(self.choices) > 0:
+            message = self.choices[0]["message"]
+            content = message["content"]
+            context_str = "\n\nSources:\n" + "\n".join(
+                f"- {node.text} (score: {node.score})"
+                for node in context
+            )
+            message["content"] = content + context_str
+
+    @classmethod
+    def from_rag_response(cls, request: ChatCompletionRequest, response, context: List[SourceNodeSchema]):
+        """Create a chat completion response from a RAG response"""
+        instance = cls(
+            model=request.model,
+            choices=[{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": response.response
+                },
+                "finish_reason": "stop"
+            }]
+        )
+        instance.add_rag_context(context)
+        return instance
+
 
 class WhiskQueryBaseResponseSchema(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
