@@ -19,6 +19,8 @@ from .kitchenai_sdk.nats_schema import QueryResponseMessage
 from .config import WhiskConfig
 from pathlib import Path
 from cookiecutter.main import cookiecutter
+from fastapi import FastAPI
+from .router import WhiskRouter
 
 app = typer.Typer(
     name="whisk",
@@ -466,5 +468,45 @@ def new(
     except Exception as e:
         console.print(f"[red]Error creating project: {str(e)}[/red]")
         raise typer.Exit(1)
+
+@app.command()
+def serve(
+    ctx: typer.Context,
+    kitchen: str = typer.Argument(
+        "whisk.examples.app:kitchen",
+        help="App to run"
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to config file"
+    ),
+):
+    """Serve the KitchenAI app via FastAPI and/or NATS"""
+    config = WhiskConfig.from_file(config_file) if config_file else WhiskConfig.from_env()
+    
+    # Import the kitchen module
+    module_path, attr = kitchen.split(":")
+    kitchen_module = importlib.import_module(module_path)
+    kitchen = getattr(kitchen_module, attr)
+    
+    # Create FastAPI app if needed
+    app = FastAPI() if config.server.type in ["fastapi", "both"] else None
+    
+    # Setup router
+    router = WhiskRouter(kitchen, config, app)
+    router.mount()
+    
+    if config.server.type in ["fastapi", "both"]:
+        import uvicorn
+        uvicorn.run(
+            app,
+            host=config.server.fastapi.host,
+            port=config.server.fastapi.port
+        )
+    else:
+        # Run NATS-only mode
+        asyncio.run(router.nats_router.run())
 
 

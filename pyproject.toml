@@ -12,6 +12,7 @@ license = "MIT"
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.7.0",
+    "fastapi",
     "faststream[nats]>=0.4.5",
     "anyio>=3.7.1",
     "watchfiles",
@@ -26,7 +27,6 @@ include = [
 ]
 [project.scripts]
 whisk = "whisk.__main__:app"
-update-changelog = "git cliff -o CHANGELOG.md"
 
 [tool.hatch.version]
 path = "whisk/__about__.py"
@@ -42,6 +42,10 @@ dependencies = [
     "cookiecutter>=2.5.0",  # Added for CLI tests
     "git-cliff",  # Added for changelog generation
 ]
+
+# Optional: Add scripts section to hatch env
+[tool.hatch.envs.default.scripts]
+changelog = "git cliff -o CHANGELOG.md"
 
 [tool.pytest.ini_options]
 addopts = "-v --cov=whisk --cov-report=term-missing"
