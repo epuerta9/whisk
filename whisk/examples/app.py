@@ -6,12 +6,19 @@ from whisk.kitchenai_sdk.schema import (
     DependencyType,
     SourceNode
 )
+from whisk.kitchenai_sdk.http_schema import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionChoice,
+    ChatResponseMessage
+)
 try:
     from llama_index.llms.openai import OpenAI
     from llama_index.embeddings.openai import OpenAIEmbedding
     from llama_index.core import VectorStoreIndex, Document
 except ImportError:
     raise ImportError("Please install llama-index to use this example: pip install llama-index")
+import time
 
 # Set up logging with proper configuration
 logging.basicConfig(
@@ -47,18 +54,51 @@ vector_store = VectorStoreIndex.from_documents(
 kitchen.register_dependency(DependencyType.LLM, llm)
 kitchen.register_dependency(DependencyType.VECTOR_STORE, vector_store)
 
-@kitchen.chat.handler("chat.completions", DependencyType.LLM)
-async def chat_handler(chat: ChatInput, llm) -> ChatResponse:
-    """Simple chat completion handler"""
-    # Get last message content
-    prompt = chat.messages[-1].content
-    logger.info(f"Simple chat prompt: {prompt}")
+@kitchen.chat.handler("chat.completions")
+async def handle_chat(request: ChatCompletionRequest):
+    """Simple chat handler that forwards to OpenAI"""
+    content = request.messages[-1].content
+    logger.info(f"Simple chat prompt: {content}")
     
-    # Get response from LLM
-    response = await llm.acomplete(prompt)
+    # Handle special OpenWebUI requests after commands
+    if "### Task:" in content and "### Chat History:" in content:
+        chat_history = content.split("### Chat History:")[1].strip()
+        
+        # If this is a title/tag request after a command, return empty
+        if any(cmd in chat_history for cmd in ["/help", "/show", "/capabilities", "/chat", "/file", "/eval"]):
+            logger.info("Skipping title/tag generation for command response")
+            return ChatCompletionResponse(
+                id=f"chatcmpl-{int(time.time())}",
+                object="chat.completion",
+                created=int(time.time()),
+                model="gpt-3.5-turbo",
+                choices=[
+                    ChatCompletionChoice(
+                        index=0,
+                        message=ChatResponseMessage(
+                            role="assistant",
+                            content="{}"  # Return empty JSON
+                        ),
+                        finish_reason="stop"
+                    )
+                ]
+            )
+    # Forward to OpenAI for normal messages
+    response = await llm.acomplete(content)
     
-    # Return simplified response
-    return ChatResponse(content=response.text)
+    return ChatCompletionResponse(
+        model=request.model,
+        choices=[
+            ChatCompletionChoice(
+                index=0,
+                message=ChatResponseMessage(
+                    role="assistant",
+                    content=response.text
+                ),
+                finish_reason="stop"
+            )
+        ]
+    )
 
 @kitchen.chat.handler("chat.rag", DependencyType.VECTOR_STORE, DependencyType.LLM)
 async def rag_handler(chat: ChatInput, vector_store, llm) -> ChatResponse:

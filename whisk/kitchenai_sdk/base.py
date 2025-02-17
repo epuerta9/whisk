@@ -27,6 +27,10 @@ class DependencyManager:
         """Check if a dependency is registered"""
         return dep_type in self._dependencies
 
+    def list_dependencies(self) -> Dict[str, Any]:
+        """List all registered dependencies"""
+        return self._dependencies.copy()
+
 class TaskRegistry:
     """Base class for task registries"""
     def __init__(self, namespace: str, manager: Optional[DependencyManager] = None):

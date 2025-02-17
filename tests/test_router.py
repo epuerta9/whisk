@@ -4,22 +4,33 @@ from fastapi.testclient import TestClient
 from whisk.router import WhiskRouter
 from whisk.config import WhiskConfig, ServerConfig, FastAPIConfig, NatsConfig, ClientConfig
 from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
-from whisk.kitchenai_sdk.schema import WhiskQuerySchema, ChatCompletionRequest, ChatCompletionResponse
+from whisk.kitchenai_sdk.schema import WhiskQuerySchema
+from whisk.kitchenai_sdk.http_schema import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionChoice,
+    ChatResponseMessage
+)
 
 # Test fixtures
 @pytest.fixture
 def kitchen():
     app = KitchenAIApp()
     
-    @app.chat.handler("chat.completions")
+    @app.chat.handler("test-model")
     async def handle_chat(request: ChatCompletionRequest):
         return ChatCompletionResponse(
             model=request.model,
-            choices=[{
-                "index": 0,
-                "message": {"role": "assistant", "content": "test response"},
-                "finish_reason": "stop"
-            }]
+            choices=[
+                ChatCompletionChoice(
+                    index=0,
+                    message=ChatResponseMessage(
+                        role="assistant",
+                        content="test response"
+                    ),
+                    finish_reason="stop"
+                )
+            ]
         )
     
     return app
@@ -49,10 +60,9 @@ def fastapi_config():
 class TestFastAPIRouter:
     @pytest.fixture
     def app(self, kitchen, fastapi_config):
-        fastapi_app = FastAPI()
-        router = WhiskRouter(kitchen, fastapi_config, fastapi_app)
-        router.mount()
-        return fastapi_app
+        # Create router directly with kitchen that has test handler
+        router = WhiskRouter(kitchen, fastapi_config)
+        return router.router  # Return the FastAPI app directly
     
     @pytest.fixture
     def client(self, app):

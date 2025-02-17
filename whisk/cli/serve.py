@@ -8,49 +8,33 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ..config import WhiskConfig, ServerConfig, FastAPIConfig, NatsConfig
 from ..router import WhiskRouter
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_application():
     """Factory function for uvicorn"""
     # Get configuration from environment variables
     kitchen_path = os.getenv("WHISK_KITCHEN_PATH")
     config_json = os.getenv("WHISK_CONFIG")
+    commands_enabled = os.getenv("WHISK_COMMANDS", "false").lower() == "true"
+    
     if not kitchen_path or not config_json:
         raise RuntimeError("Missing required environment variables")
     
     config = WhiskConfig.parse_raw(config_json)
-    return create_app(kitchen_path, config)
+    return create_app(kitchen_path, config, enable_commands=commands_enabled)
 
-def create_app(kitchen_path: str, config: WhiskConfig):
+def create_app(kitchen_path: str, config: WhiskConfig, enable_commands: bool = False):
     """Create FastAPI application"""
     # Import the kitchen module
     module_path, attr = kitchen_path.split(":")
     kitchen_module = importlib.import_module(module_path)
     kitchen = getattr(kitchen_module, attr)
     
-    # Create FastAPI app with OpenAPI configuration
-    app = FastAPI(
-        title="Whisk API",
-        description="KitchenAI API server",
-        version="1.0.0",
-        openapi_url="/openapi.json",
-        docs_url="/docs",
-        redoc_url="/redoc"
-    )
-    
-    # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    
-    # Mount the router
-    router = WhiskRouter(kitchen, config, app)
-    router.mount()
-    
-    return app
+    # Create router without command support
+    router = WhiskRouter(kitchen, config, enable_commands=False)
+    return router.router
 
 def serve(
     kitchen: str = typer.Option(
@@ -97,9 +81,16 @@ def serve(
         None,
         "--watch",
         help="Directories to watch for changes"
+    ),
+    commands: bool = typer.Option(
+        False,  # Default to False and ignore
+        "--commands",
+        help="Enable chat commands (currently disabled)"
     )
 ):
     """Start the Whisk server"""
+    logger.info(f"Starting server with commands enabled: {commands}")
+    
     config = WhiskConfig(
         server=ServerConfig(
             type=server_type,
@@ -120,6 +111,7 @@ def serve(
             # Store configuration in environment variables
             os.environ["WHISK_KITCHEN_PATH"] = kitchen
             os.environ["WHISK_CONFIG"] = config.model_dump_json()
+            # Don't set WHISK_COMMANDS
             
             # For reload mode, use factory function
             uvicorn.run(
@@ -133,7 +125,7 @@ def serve(
             )
         else:
             # For normal mode, create app directly
-            app = create_app(kitchen, config)
+            app = create_app(kitchen, config, enable_commands=False)
             uvicorn.run(app, host=host, port=port)
     elif server_type == 'nats':
         # Start NATS server

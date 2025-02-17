@@ -1,84 +1,119 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from faststream.nats.fastapi import NatsRouter
 from typing import Optional
 from .config import WhiskConfig
 from .kitchenai_sdk.kitchenai import KitchenAIApp
-from .kitchenai_sdk.schema import WhiskQuerySchema
 from .kitchenai_sdk.http_schema import (
     ChatCompletionRequest,
-    ChatCompletionResponse,
-    ChatCompletionChoice,
-    ChatResponseMessage,
-    StreamingChatCompletionResponse
+    ChatCompletionResponse
 )
 import json
 from .api.models import router as models_router
-from .api.chat import router as chat_router  # Import chat router
-from .api.files import router as files_router  # Add this import
+from .api.chat import router as chat_router
+from .api.files import router as files_router
+from .api.commands import CommandMiddleware
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 class WhiskRouter:
+    """FastAPI router with command support"""
     def __init__(
         self,
         kitchen: KitchenAIApp,
         config: WhiskConfig,
-        fastapi_app: Optional[FastAPI] = None
+        enable_commands: bool = False
     ):
         self.kitchen = kitchen
         self.config = config
-        self.app = fastapi_app
+        logger.info(f"Initializing FastAPIRouter with enable_commands={enable_commands}")
         
-        # Initialize FastAPI routes if needed
-        if config.server.type in ["fastapi", "both"] and self.app:
-            # Mount API routers first
-            self.app.include_router(models_router)
-            self.app.include_router(chat_router)
-            self.app.include_router(files_router)
-            # Then setup any additional routes
-            self._setup_fastapi_routes()
-            
-        # Initialize NATS router only if explicitly configured
-        if (config.server.type in ["nats", "both"] and 
-            config.server.nats is not None and 
-            config.client and config.client.id):
-            self.nats_router = NatsRouter(
-                config.nats.url,
-                user=config.nats.user,
-                password=config.nats.password,
-                name=config.client.id
-            )
-            self._setup_nats_handlers()
-    
-    def _setup_nats_handlers(self):
-        """Setup NATS message handlers"""
-        @self.nats_router.subscriber(
-            f"kitchenai.service.{self.config.client.id}.query.*",
-            include_in_schema=True,
-            description="Handle query requests"
+        self.router = FastAPI(
+            title="Whisk API",
+            description="KitchenAI API server",
+            version="1.0.0",
+            openapi_url="/openapi.json",
+            docs_url="/docs",
+            redoc_url="/redoc"
         )
-        async def handle_query(msg: WhiskQuerySchema) -> dict:
-            task = self.kitchen.query.get_task(msg.label)
-            if task:
-                return await task(msg)
-            return {"error": f"No task found for label {msg.label}"}
-            
-        # Add other NATS handlers as needed...
+        
+        # Add CORS middleware
+        self.router.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
+        # Disable command middleware for now
+        self.command_middleware = None
+        
+        # Setup routes
+        self._setup_routes()
     
-    def _setup_fastapi_routes(self):
-        """Setup FastAPI routes including OpenAI-compatible endpoints"""
-        @self.app.post(f"{self.config.server.fastapi.prefix}/chat/completions")
-        async def chat_completions(request: ChatCompletionRequest):
-            task = self.kitchen.chat.get_task("chat.completions")
-            if not task:
-                raise HTTPException(status_code=404, detail="Chat handler not found")
+    def _setup_routes(self):
+        """Setup all API routes"""
+        prefix = self.config.server.fastapi.prefix
+        
+        # Mount API routers with prefix
+        self.router.include_router(models_router, prefix=prefix)
+        self.router.include_router(chat_router, prefix=prefix)
+        self.router.include_router(files_router, prefix=prefix)
+        
+        # Add OPTIONS and GET handlers for models
+        @self.router.options(f"{prefix}/models")
+        async def models_options():
+            return {}
+        
+        @self.router.get(f"{prefix}/models")
+        async def list_models():
+            """List available models"""
+            # Get all registered chat handlers as models
+            handlers = self.kitchen.chat.list_tasks()
+            return {
+                "object": "list",
+                "data": [
+                    {
+                        "id": handler_name,
+                        "object": "model",
+                        "created": 1677610602,
+                        "owned_by": "whisk"
+                    }
+                    for handler_name in handlers
+                ]
+            }
+        
+        @self.router.options(f"{prefix}/chat/completions")
+        async def chat_options():
+            return {}
+        
+        # Setup chat completions endpoint
+        @self.router.post(f"{prefix}/chat/completions")
+        async def chat_completions(request: Request):
+            data = await request.json()
+            chat_request = ChatCompletionRequest(**data)
             
-            if request.stream:
+            # Get the task for the requested model
+            task = self.kitchen.chat.get_task(chat_request.model)
+            logger.info(f"Looking for handler for model: {chat_request.model}")
+            logger.info(f"Available handlers: {self.kitchen.chat.list_tasks()}")
+            
+            if not task:
+                raise HTTPException(status_code=404, detail=f"Chat handler not found for model: {chat_request.model}")
+            
+            # Handle streaming
+            if chat_request.stream:
                 return StreamingResponse(
-                    self._stream_response(task, request),
+                    self._stream_response(task, chat_request),
                     media_type="text/event-stream"
                 )
             
-            response = await task(request)
+            # Normal response
+            response = await task(chat_request)
             return response
     
     async def _stream_response(self, task, request: ChatCompletionRequest):
@@ -93,10 +128,10 @@ class WhiskRouter:
                 "created": response.created,
                 "model": response.model,
                 "choices": [{
-                    "index": choice["index"],
+                    "index": choice.index,
                     "delta": {
                         "role": "assistant",
-                        "content": choice["message"]["content"]
+                        "content": choice.message.content
                     },
                     "finish_reason": None
                 }]
@@ -122,4 +157,4 @@ class WhiskRouter:
         """Mount all routes and start services"""
         # NATS router is mounted last if it exists
         if hasattr(self, 'nats_router'):
-            self.app.include_router(self.nats_router) 
+            self.router.include_router(self.nats_router) 
