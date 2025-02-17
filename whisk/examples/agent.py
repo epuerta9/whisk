@@ -7,7 +7,7 @@ from whisk.kitchenai_sdk.http_schema import (
 )
 
 # Initialize the app
-kitchen = KitchenAIApp(namespace="whisk-jupyter-app-modified")
+kitchen = KitchenAIApp(namespace="whisk-python-script-modified")
 
 @kitchen.chat.handler("chat.completions,new")
 async def handle_chat(request: ChatCompletionRequest) -> ChatCompletionResponse:
