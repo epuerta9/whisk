@@ -5,6 +5,9 @@ from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import time
+from ..dependencies import get_kitchen_app
+from typing import Annotated
+from ..kitchenai_sdk.http_schema import ModelResponse, ModelListResponse
 
 class Model(BaseModel):
     """Represents a KitchenAI model (handler)"""
@@ -32,11 +35,6 @@ router = APIRouter(
         }
     }
 )
-
-def get_kitchen_app() -> KitchenAIApp:
-    """Get KitchenAI app instance"""
-    from whisk.examples.app import kitchen
-    return kitchen
 
 def get_model_id(namespace: str, version: str, handler: str) -> str:
     """Generate model ID from namespace, version and handler"""
@@ -89,47 +87,55 @@ def get_models_from_kitchen(app: KitchenAIApp) -> List[Model]:
     return models
 
 @router.get("/models")
-async def list_models(kitchen: KitchenAIApp = Depends(get_kitchen_app)) -> Dict[str, Any]:
-    """List available models (chat handlers)"""
-    # Get all handlers from app
-    handlers_dict = kitchen.to_dict()
+async def list_models():
+    """List available models"""
+    kitchen = get_kitchen_app()
     
-    # Format as OpenAI-style model list
-    models = [
-        {
-            "id": f"@{kitchen.namespace}-{kitchen.version}/{handler}",  # Format as @namespace-version/handler
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": kitchen.namespace,
-            "permission": [],
-            "root": handler,
-            "parent": None,
-        }
-        for handler in handlers_dict["chat_handlers"]  # Get chat handlers from dict
-    ]
+    # Get all registered handlers from the app
+    handlers = kitchen.to_dict()
+    models = []
+    created = int(time.time())
     
-    return {
-        "object": "list",
-        "data": models
-    }
+    # Add chat handlers
+    for handler in handlers["chat_handlers"]:
+        models.append(ModelResponse(
+            id=f"@{kitchen.namespace}-{kitchen.version}/{handler}",
+            created=created,
+            owned_by=kitchen.namespace
+        ))
+    
+    return ModelListResponse(data=models)
 
 @router.options("/models")
 async def models_options() -> Dict[str, Any]:
     """Handle OPTIONS request for CORS"""
     return {}
 
-@router.get("/models/{model_id}", response_model=Model)
-async def retrieve_model(model_id: str, kitchen: KitchenAIApp = Depends(get_kitchen_app)):
-    """Retrieves a specific model (handler) by ID"""
-    # Get all models
-    models = get_models_from_kitchen(kitchen)
+@router.get("/models/{model_id}", response_model=ModelResponse)
+async def get_model(model_id: str):
+    """Get model details"""
+    kitchen = get_kitchen_app()
     
-    # Find the requested model
-    for model in models:
-        if model.id == model_id:
-            return model
+    # Parse model ID
+    if not model_id.startswith("@"):
+        raise HTTPException(status_code=404, detail="Invalid model ID format")
     
-    raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
+    namespace, handler = model_id[1:].split("/", 1)
+    if namespace != kitchen.namespace:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    # Check if handler exists in any taxonomy
+    taxonomies = [kitchen.chat, kitchen.storage, kitchen.embeddings, kitchen.query]
+    for taxonomy in taxonomies:
+        if handler in taxonomy.get_handlers():
+            return ModelResponse(
+                id=model_id,
+                object="model",
+                created=None,
+                owned_by=namespace
+            )
+    
+    raise HTTPException(status_code=404, detail="Model not found")
 
 @router.delete("/models/{model_id}", status_code=204)
 async def delete_model(model_id: str):

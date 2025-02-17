@@ -122,3 +122,19 @@ class FileDeleteResponse(BaseModel):
     id: str = Field(..., description="The file identifier.")
     object: str = Field("file", description="Always 'file'.")
     deleted: bool = Field(..., description="Indicates if the file was deleted successfully.")
+
+class ModelResponse(BaseModel):
+    """Response model for a single model"""
+    id: str
+    object: str = "model"
+    created: int
+    owned_by: str
+    permissions: Optional[List[str]] = None
+    root: Optional[str] = None
+    parent: Optional[str] = None
+
+class ModelListResponse(BaseModel):
+    """Response model for listing models"""
+    object: str = "list"
+    data: List[ModelResponse]
+    has_more: bool = False

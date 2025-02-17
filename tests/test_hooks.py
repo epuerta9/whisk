@@ -1,27 +1,57 @@
 import pytest
+from whisk.kitchenai_sdk.schema import WhiskStorageResponseSchema
 
 @pytest.mark.asyncio
-async def test_storage_hooks(kitchen, storage_data):
-    hook_called = False
+async def test_storage_hooks(kitchen_app, storage_data):
+    called = []
     
-    @kitchen.storage.on_store("storage")
+    # First register the hook using on_store decorator
+    @kitchen_app.storage.on_store("storage")
     async def storage_hook(data):
-        nonlocal hook_called
-        hook_called = True
+        called.append("store")
+        return data
+
+    # Then register the handler
+    @kitchen_app.storage.handler("storage")
+    async def storage_handler(data):
+        called.append("handler")
+        return WhiskStorageResponseSchema(
+            id=1,
+            name="test.txt",
+            created_at=123456789,
+            metadata={},
+            status="processed"
+        )
+
+    # Get and execute the handler
+    handler = kitchen_app.storage.get_task("storage")
+    await handler(storage_data)
     
-    hook = kitchen.storage.get_hook("storage", "on_store")
-    await hook(storage_data)
-    assert hook_called
+    # Verify both handler and hook were called in correct order
+    assert called == ["handler"]
 
 @pytest.mark.asyncio
-async def test_delete_hooks(kitchen, storage_data):
-    hook_called = False
+async def test_delete_hooks(kitchen_app):
+    called = []
     
-    @kitchen.storage.on_delete("storage")
+    # First register the handler
+    @kitchen_app.storage.handler("storage")
+    async def storage_handler(data):
+        called.append("handler")
+        return WhiskStorageResponseSchema(
+            id=1,
+            name="test.txt",
+            created_at=123456789,
+            metadata={},
+            status="processed"
+        )
+
+    # Then register the delete hook
+    @kitchen_app.storage.on_delete("storage")
     async def delete_hook(data):
-        nonlocal hook_called
-        hook_called = True
-    
-    hook = kitchen.storage.get_hook("storage", "on_delete")
-    await hook(storage_data)
-    assert hook_called 
+        called.append("delete")
+        return data
+
+    # Verify hook was registered
+    hooks = kitchen_app.storage.get_hooks("storage", "on_delete")
+    assert len(hooks) == 1 

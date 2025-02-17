@@ -7,30 +7,31 @@ from whisk.kitchenai_sdk.http_schema import (  # Import from http_schema
 )
 
 @pytest.mark.asyncio
-async def test_query_handler_error(kitchen):
-    @kitchen.chat.handler("chat.completions")
-    async def handle_chat(request: ChatCompletionRequest):
+async def test_query_handler_error(kitchen_app):
+    @kitchen_app.chat.handler("chat.completions")
+    async def handle_chat(request):
         raise ValueError("Test error")
     
     request = ChatCompletionRequest(
-        messages=[Message(role="user", content="Hello")],  # Use Message instead of ChatMessage
+        messages=[{"role": "user", "content": "Hello"}],
         model="test-model"
     )
     
     with pytest.raises(ValueError):
-        handler = kitchen.chat.get_task("chat.completions")
+        handler = kitchen_app.chat.get_task("chat.completions")
         await handler(request)
 
 @pytest.mark.asyncio
-async def test_storage_handler_error(kitchen, storage_data):
-    @kitchen.storage.handler("storage")
+async def test_storage_handler_error(kitchen_app, storage_data):
+    @kitchen_app.storage.handler("storage")
     async def storage_handler(data):
         raise ValueError("Test error")
     
-    handler = kitchen.storage.get_task("storage")
+    handler = kitchen_app.storage.get_task("storage")
     with pytest.raises(ValueError):
         await handler(storage_data)
 
-def test_invalid_dependency(kitchen):
+@pytest.mark.asyncio
+async def test_invalid_dependency(kitchen_app):
     with pytest.raises(KeyError):
-        kitchen.manager.get_dependency(DependencyType.LLM) 
+        kitchen_app.manager.get_dependency("invalid") 

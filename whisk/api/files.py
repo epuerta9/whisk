@@ -1,20 +1,15 @@
 from fastapi import APIRouter, UploadFile, HTTPException, Depends, File, Form
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Annotated
 from ..kitchenai_sdk.kitchenai import KitchenAIApp
 from ..kitchenai_sdk.http_schema import FileResponse, FileListResponse, FileDeleteResponse
 from ..kitchenai_sdk.schema import StorageRequest
 import time
 import json
+from ..dependencies import get_kitchen_app
 
 router = APIRouter(prefix="/v1", tags=["Files"])
-
-
-def get_kitchen_app() -> KitchenAIApp:
-    """Get KitchenAI app instance"""
-    from whisk.examples.app import kitchen
-
-    return kitchen
-
+import logging
+logger = logging.getLogger(__name__)
 
 def parse_metadata(metadata_str: Optional[str]) -> Dict[str, str]:
     """Parse metadata string into dictionary"""
@@ -31,11 +26,11 @@ def parse_metadata(metadata_str: Optional[str]) -> Dict[str, str]:
 async def upload_file(
     file: UploadFile = File(...),
     purpose: str = Form("fine-tune"),
-    extra_body: Optional[str] = Form(None),
-    kitchen: KitchenAIApp = Depends(get_kitchen_app)
+    extra_body: Optional[str] = Form(None)
 ):
     """Upload a file"""
-    task = kitchen.storage.get_task("storage")
+    kitchen_app = get_kitchen_app()  # Get app directly
+    task = kitchen_app.storage.get_task("storage")
     if not task:
         raise HTTPException(status_code=404, detail="Storage handler not found")
 
@@ -71,14 +66,14 @@ async def upload_file(
 
 @router.get("/files", response_model=FileListResponse)
 async def list_files(
-    kitchen: KitchenAIApp = Depends(get_kitchen_app),
     purpose: Optional[str] = None,
     limit: int = 10000,
     order: str = "desc",
     after: Optional[str] = None
 ):
     """List all files with pagination support"""
-    task = kitchen.storage.get_task("storage")
+    kitchen_app = get_kitchen_app()  # Get app directly
+    task = kitchen_app.storage.get_task("storage")
     if not task:
         raise HTTPException(status_code=404, detail="Storage handler not found")
     
@@ -109,9 +104,10 @@ async def list_files(
 
 
 @router.get("/files/{file_id}", response_model=FileResponse)
-async def get_file(file_id: str, kitchen: KitchenAIApp = Depends(get_kitchen_app)):
+async def get_file(file_id: str):
     """Get file metadata"""
-    task = kitchen.storage.get_task("storage")
+    kitchen_app = get_kitchen_app()  # Get app directly
+    task = kitchen_app.storage.get_task("storage")
     if not task:
         raise HTTPException(status_code=404, detail="Storage handler not found")
 
@@ -131,12 +127,10 @@ async def get_file(file_id: str, kitchen: KitchenAIApp = Depends(get_kitchen_app
 
 
 @router.delete("/files/{file_id}", response_model=FileDeleteResponse)
-async def delete_file(
-    file_id: str,
-    kitchen: KitchenAIApp = Depends(get_kitchen_app)
-):
+async def delete_file(file_id: str):
     """Delete a file"""
-    task = kitchen.storage.get_task("storage")
+    kitchen_app = get_kitchen_app()  # Get app directly
+    task = kitchen_app.storage.get_task("storage")
     if not task:
         raise HTTPException(status_code=404, detail="Storage handler not found")
     

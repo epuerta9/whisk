@@ -153,18 +153,72 @@ print(response)
 
 ## Running Your App
 
+There are several ways to run your Whisk application:
+
+### 1. Using the CLI with Module Path
+
+The most flexible way is to use the CLI with a module path to your app:
+
+```bash
+# Format: whisk serve module.path:app_name
+whisk serve my_app.main:kitchen
+
+# With options
+whisk serve my_app.main:kitchen --port 8080 --reload
+```
+
+You can also specify the app path in your config file:
+
+```yaml
+# whisk.yml
+server:
+  type: fastapi
+  app_path: my_app.main:kitchen  # Module path to your KitchenAI app
+  fastapi:
+    host: 0.0.0.0
+    port: 8000
+```
+
+Then simply run:
+```bash
+whisk serve
+```
+
+The CLI argument takes precedence over the config file setting.
+
+### 2. Running Programmatically
+
 ```python
-from whisk.config import WhiskConfig, ServerConfig
+# In a script
 from whisk.router import WhiskRouter
+from whisk.config import WhiskConfig, ServerConfig
 
-# Configure and create router
-config = WhiskConfig(server=ServerConfig(type="fastapi"))
-router = WhiskRouter(kitchen_app=kitchen, config=config)
+# Create router
+router = WhiskRouter(kitchen_app, config)
 
-# Run the server
+# Run with custom host/port
 router.run(host="0.0.0.0", port=8000)
 ```
 
+### 3. Using Your Own FastAPI App
+
+```python
+from fastapi import FastAPI
+from whisk.router import WhiskRouter
+
+# Create your FastAPI app
+app = FastAPI()
+
+# Create router with your app
+router = WhiskRouter(
+    kitchen_app=kitchen_app,
+    config=config,
+    fastapi_app=app
+)
+
+# Run the server
+router.run()
+```
 
 ## Customizing FastAPI
 

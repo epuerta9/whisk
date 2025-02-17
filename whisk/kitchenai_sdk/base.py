@@ -3,7 +3,7 @@ import logging
 from functools import wraps
 import asyncio
 from .schema import DependencyType
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +70,9 @@ class TaskRegistry:
         return self._tasks
 
 class KitchenAITask:
-    def __init__(self, namespace: str, manager=None):
+    def __init__(self, namespace: str, dependency_manager=None):
         self.namespace = namespace
-        self._manager = manager
+        self._manager = dependency_manager
         self._tasks = {}
         self._hooks = {}
 
@@ -92,14 +92,14 @@ class KitchenAITask:
             return wrapper
         return decorator
 
-    def register_task(self, label: str, task):
-        """Register a task with a label"""
-        self._tasks[label] = task
+    def register_task(self, name: str, task: Callable):
+        """Register a task with a name"""
+        self._tasks[name] = task
         return task
 
-    def get_task(self, label: str):
-        """Get a task by label"""
-        return self._tasks.get(label)
+    def get_task(self, name: str) -> Optional[Callable]:
+        """Get a registered task by name"""
+        return self._tasks.get(name)
 
     def list_tasks(self):
         """List all registered tasks"""
@@ -107,17 +107,26 @@ class KitchenAITask:
 
 
 class KitchenAITaskHookMixin:
-    def register_hook(self, label: str, hook_type: str, func: Callable):
-        """Register a hook function with the given label."""
-        hook_key = f"{self.namespace}.{label}.{hook_type}"
-        self._hooks[hook_key] = func
-        return func
+    """Mixin for adding hook functionality to tasks"""
+    def __init__(self):
+        self.hooks = {}
 
-    def get_hook(self, label: str, hook_type: str) -> Callable | None:
-        """Get a registered hook function by label."""
-        hook_key = f"{self.namespace}.{label}.{hook_type}"
-        return self._hooks.get(hook_key)
+    def register_hook(self, task_name: str, hook_type: str, hook_func: Callable):
+        """Register a hook for a task"""
+        if task_name not in self.hooks:
+            self.hooks[task_name] = {}
+        if hook_type not in self.hooks[task_name]:
+            self.hooks[task_name][hook_type] = []
+        self.hooks[task_name][hook_type].append(hook_func)
+        return hook_func  # Return the function for decorator usage
 
-    def list_hooks(self) -> list:
-        """List all registered hook labels."""
-        return list(self._hooks.keys())
+    def get_hooks(self, task_name: str, hook_type: str) -> List[Callable]:
+        """Get hooks for a task"""
+        return self.hooks.get(task_name, {}).get(hook_type, [])
+
+    async def execute_hooks(self, task_name: str, hook_type: str, data: Any) -> Any:
+        """Execute hooks for a task"""
+        hooks = self.get_hooks(task_name, hook_type)
+        for hook in hooks:
+            data = await hook(data)
+        return data

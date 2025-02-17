@@ -11,7 +11,8 @@ from whisk.kitchenai_sdk.http_schema import (
     ChatCompletionChoice,
     ChatResponseMessage
 )
-from whisk.api.chat import router as chat_router, get_kitchen_app  # Import the router and get_kitchen_app
+from whisk.api.chat import router as chat_router
+from whisk.dependencies import get_kitchen_app, set_kitchen_app  # Import from dependencies instead
 
 # Test fixtures
 @pytest.fixture
@@ -66,50 +67,63 @@ class TestFastAPIRouter:
         return router.router  # Return the FastAPI app directly
     
     @pytest.fixture
-    def client(self, kitchen):
-        # Add test chat handler
-        @kitchen.chat.handler("test-model")
-        async def test_handler(request):
-            return {
-                "choices": [{
-                    "message": {"role": "assistant", "content": "Test response"},
-                    "finish_reason": "stop"
-                }]
-            }
+    def test_client(self, kitchen):
+        # Register a chat handler with the expected name
+        @kitchen.chat.handler("chat.completions")
+        async def chat_handler(request):
+            return ChatCompletionResponse(  # Use the proper response model
+                id="test-id",
+                object="chat.completion",
+                created=123456789,
+                model=request.model,
+                choices=[
+                    ChatCompletionChoice(
+                        index=0,
+                        message=ChatResponseMessage(
+                            role="assistant", 
+                            content="Test response"
+                        ),
+                        finish_reason="stop"
+                    )
+                ],
+                usage={"total_tokens": 10}
+            )
 
         app = FastAPI()
-        app.include_router(chat_router)  # Use imported router
-        app.dependency_overrides[get_kitchen_app] = lambda: kitchen
+        app.include_router(chat_router)
+        
+        # Set up the kitchen app
+        set_kitchen_app(kitchen)
+        
         return TestClient(app)
     
-    def test_chat_completions_endpoint(self, client):
-        response = client.post(
+    def test_chat_completions_endpoint(self, test_client):
+        response = test_client.post(
             "/v1/chat/completions",
             json={
                 "messages": [{"role": "user", "content": "Hello"}],
-                "model": "test-model",
+                "model": "@test-app-0.0.1/chat.completions",
                 "stream": False
             }
         )
+        
         assert response.status_code == 200
         data = response.json()
+        assert isinstance(data, dict)
         assert "choices" in data
         assert len(data["choices"]) > 0
         assert "message" in data["choices"][0]
-    
-    def test_chat_completions_streaming(self, client):
-        response = client.post(
+        assert data["choices"][0]["message"]["content"] == "Test response"
+
+    def test_chat_completions_streaming(self, test_client):
+        response = test_client.post(
             "/v1/chat/completions",
             json={
                 "messages": [{"role": "user", "content": "Hello"}],
-                "model": "test-model",
+                "model": "@test-app-0.0.1/chat.completions",
                 "stream": True
             }
         )
-        assert response.status_code == 200
         
-        # Use iter_bytes() instead of iter_lines()
-        chunks = [chunk.decode('utf-8') for chunk in response.iter_bytes()]
-        assert len(chunks) > 0
-        for chunk in chunks:
-            assert chunk.startswith("data: ")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")

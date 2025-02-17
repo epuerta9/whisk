@@ -37,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize the app
-kitchen = KitchenAIApp(namespace="whisk-example-app")
+kitchen = KitchenAIApp(namespace="whisk-example-app-2")
 
 # Initialize dependencies
 llm = OpenAI(

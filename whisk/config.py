@@ -33,6 +33,7 @@ class ServerConfig(BaseModel):
     type: Literal["fastapi", "nats", "both"]
     fastapi: Optional[FastAPIConfig] = None
     nats: Optional[NatsConfig] = None
+    app_path: Optional[str] = None
 
     @field_validator("type")
     def validate_type(cls, v):

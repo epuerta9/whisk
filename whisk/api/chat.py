@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Union, Dict, Any, AsyncGenerator, Annotated, Callable
+from typing import List, Optional, Union, Dict, Any, AsyncGenerator, Callable
 import json
 import time
 import asyncio
@@ -16,22 +16,17 @@ from ..kitchenai_sdk.http_schema import (
     ChatCompletionChunkDelta
 )
 from ..kitchenai_sdk.kitchenai import KitchenAIApp
+from ..dependencies import get_kitchen_app
 
 router = APIRouter(
     prefix="/v1",
     tags=["Chat"]
 )
 
-def get_kitchen_app() -> KitchenAIApp:
-    """Dependency to get the KitchenAI app instance"""
-    from whisk.examples.app import kitchen
-    return kitchen
-
-def get_chat_task(
-    request: ChatCompletionRequest,
-    kitchen: Annotated[KitchenAIApp, Depends(get_kitchen_app)]
-) -> Callable:
+def get_chat_task(request: ChatCompletionRequest) -> Callable:
     """Get the appropriate chat task based on the request"""
+    kitchen = get_kitchen_app()
+    
     # Extract handler name from model field
     handler = request.model.split("/")[-1]
     
@@ -114,12 +109,27 @@ async def stream_response(task: Callable, request: ChatCompletionRequest):
     yield f"data: {json.dumps(final_chunk)}\n\n"
     yield "data: [DONE]\n\n"
 
-@router.post("/chat/completions", response_model=None)
-async def chat_completions(
-    request: ChatCompletionRequest,
-    task: Annotated[Callable, Depends(get_chat_task)]
-) -> Union[ChatCompletionResponse, StreamingResponse]:
+@router.post(
+    "/chat/completions",
+    response_model=ChatCompletionResponse,
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "model": ChatCompletionResponse
+                },
+                "text/event-stream": {
+                    "description": "Stream of server-sent events"
+                }
+            }
+        }
+    }
+)
+async def chat_completions(request: ChatCompletionRequest) -> Union[ChatCompletionResponse, StreamingResponse]:
     """Chat completion endpoint"""
+    task = get_chat_task(request)
+    
     if request.stream:
         return StreamingResponse(
             stream_response(task, request),
@@ -129,5 +139,6 @@ async def chat_completions(
     response = await task(request)
     # Convert dict response to ChatCompletionResponse if needed
     if isinstance(response, dict):
-        return ChatCompletionResponse(**response)
-    return response 
+        response = ChatCompletionResponse(**response)
+    # Return the raw dict for proper JSON serialization
+    return response.model_dump(mode='json') 

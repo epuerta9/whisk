@@ -1,16 +1,59 @@
 import pytest
+from fastapi.testclient import TestClient
 from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
+from whisk.config import WhiskConfig, ServerConfig
+from whisk.router import WhiskRouter
+from whisk.dependencies import set_kitchen_app
 from whisk.kitchenai_sdk.schema import (
     WhiskQuerySchema,
     WhiskStorageSchema,
     WhiskEmbedSchema,
     DependencyType,
-    TokenCountSchema
+    TokenCountSchema,
+    WhiskStorageResponseSchema
 )
 
 @pytest.fixture
-def kitchen():
-    return KitchenAIApp(namespace="test")
+def kitchen_app():
+    """Create a test KitchenAI app"""
+    app = KitchenAIApp(namespace="test-app")
+    
+    # Add test handlers
+    @app.chat.handler("chat.completions")
+    async def handle_chat(request):
+        return {
+            "id": "test-id",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Test response"
+                }
+            }]
+        }
+    
+    @app.storage.handler("storage")
+    async def handle_storage(request):
+        return WhiskStorageResponseSchema(
+            id=123,
+            name="test.txt",
+            created_at=123456789,
+            metadata={},
+            status="processed"
+        )
+    
+    return app
+
+@pytest.fixture
+def test_client(kitchen_app):
+    """Create a test client with the KitchenAI app configured"""
+    config = WhiskConfig(server=ServerConfig(type="fastapi"))
+    router = WhiskRouter(kitchen_app=kitchen_app, config=config)
+    
+    # Set up the app dependency
+    set_kitchen_app(kitchen_app)
+    
+    return TestClient(router.app)
 
 @pytest.fixture
 def query_data():

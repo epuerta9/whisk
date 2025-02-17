@@ -1,26 +1,27 @@
 from ..base import KitchenAITask, KitchenAITaskHookMixin
 import functools
 from ..schema import DependencyType, WhiskStorageResponseSchema
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
+from functools import wraps
 
 class StorageTask(KitchenAITask, KitchenAITaskHookMixin):
     """
     This is a class for registering storage tasks.
     """
     def __init__(self, namespace: str, dependency_manager=None):
-        super().__init__(namespace, dependency_manager)
+        KitchenAITask.__init__(self, namespace, dependency_manager)
+        KitchenAITaskHookMixin.__init__(self)
         self.handlers: Dict[str, Callable] = {}
         self.delete_handlers: Dict[str, Callable] = {}
 
     def handler(self, name: str, *dependencies: DependencyType):
         """Register a storage handler"""
         def decorator(func):
-            @functools.wraps(func)
+            @wraps(func)
             @self.with_dependencies(*dependencies)
             async def wrapper(*args, **kwargs):
                 return await func(*args, **kwargs)
             self.handlers[name] = wrapper
-            # Also register as a task for compatibility
             self.register_task(name, wrapper)
             return wrapper
         return decorator
@@ -72,19 +73,39 @@ class StorageTask(KitchenAITask, KitchenAITaskHookMixin):
     def on_store(self, label: str, *dependencies: DependencyType):
         """Decorator for registering storage hooks with dependencies."""
         def decorator(func):
-            @functools.wraps(func)
+            @wraps(func)
             @self.with_dependencies(*dependencies)
-            def wrapper(*args, **kwargs):
-                return func(*args, **kwargs)
-            return self.register_hook(label, "on_store", wrapper)
+            async def wrapper(*args, **kwargs):
+                return await func(*args, **kwargs)
+            # Register the hook and return the wrapper
+            self.register_hook(label, "on_store", wrapper)
+            return wrapper
         return decorator
     
     def on_retrieve(self, label: str, *dependencies: DependencyType):
         """Decorator for registering retrieval hooks with dependencies."""
         def decorator(func):
-            @functools.wraps(func)
+            @wraps(func)
             @self.with_dependencies(*dependencies)
-            def wrapper(*args, **kwargs):
-                return func(*args, **kwargs)
-            return self.register_hook(label, "on_retrieve", wrapper)
+            async def wrapper(*args, **kwargs):
+                return await func(*args, **kwargs)
+            self.register_hook(label, "on_retrieve", wrapper)
+            return wrapper
         return decorator
+
+    async def __call__(self, data):
+        """Execute task with hooks"""
+        task = self.get_task(data.label)
+        if not task:
+            raise ValueError(f"No handler found for {data.label}")
+            
+        # Run pre-hooks (on_store)
+        data = await self.execute_hooks(data.label, "on_store", data)
+            
+        # Run handler
+        result = await task(data)
+        
+        # Run post-hooks (on_delete)
+        result = await self.execute_hooks(data.label, "on_delete", result)
+            
+        return result
