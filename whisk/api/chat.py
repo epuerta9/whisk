@@ -33,12 +33,7 @@ def get_chat_task(
 ) -> Callable:
     """Get the appropriate chat task based on the request"""
     # Extract handler name from model field
-    if "/" in request.model:
-        # Format: "@namespace-version/handler"
-        handler = request.model.split("/")[-1]
-    else:
-        # Default to chat.completions if no specific handler requested
-        handler = "chat.completions"
+    handler = request.model.split("/")[-1]
     
     # Get the task
     task = kitchen.chat.get_task(handler)

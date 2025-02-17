@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
@@ -34,7 +34,7 @@ router = APIRouter(
 )
 
 def get_kitchen_app() -> KitchenAIApp:
-    """Dependency to get the KitchenAI app instance"""
+    """Get KitchenAI app instance"""
     from whisk.examples.app import kitchen
     return kitchen
 
@@ -88,11 +88,35 @@ def get_models_from_kitchen(app: KitchenAIApp) -> List[Model]:
     
     return models
 
-@router.get("/models", response_model=ModelList)
-async def list_models(kitchen: KitchenAIApp = Depends(get_kitchen_app)):
-    """Lists all available models (handlers) from the KitchenAI app"""
-    models = get_models_from_kitchen(kitchen)
-    return ModelList(data=models)
+@router.get("/models")
+async def list_models(kitchen: KitchenAIApp = Depends(get_kitchen_app)) -> Dict[str, Any]:
+    """List available models (chat handlers)"""
+    # Get all handlers from app
+    handlers_dict = kitchen.to_dict()
+    
+    # Format as OpenAI-style model list
+    models = [
+        {
+            "id": f"@{kitchen.namespace}-{kitchen.version}/{handler}",  # Format as @namespace-version/handler
+            "object": "model",
+            "created": int(time.time()),
+            "owned_by": kitchen.namespace,
+            "permission": [],
+            "root": handler,
+            "parent": None,
+        }
+        for handler in handlers_dict["chat_handlers"]  # Get chat handlers from dict
+    ]
+    
+    return {
+        "object": "list",
+        "data": models
+    }
+
+@router.options("/models")
+async def models_options() -> Dict[str, Any]:
+    """Handle OPTIONS request for CORS"""
+    return {}
 
 @router.get("/models/{model_id}", response_model=Model)
 async def retrieve_model(model_id: str, kitchen: KitchenAIApp = Depends(get_kitchen_app)):

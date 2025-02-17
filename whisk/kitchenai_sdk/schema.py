@@ -186,10 +186,13 @@ class WhiskStorageGetResponseSchema(BaseModel):
 
 class WhiskStorageResponseSchema(BaseModel):
     id: int
-    status: WhiskStorageStatus = WhiskStorageStatus.PENDING
-    error: Optional[str] = None
+    name: str
+    label: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
-    token_counts: Optional[TokenCountSchema] = None
+    files: Optional[List[Any]] = None
+    deleted: Optional[bool] = None
+    created_at: Optional[int] = None
+    status: Optional[str] = None
 
     @classmethod
     def with_token_counts(cls, token_counts: TokenCountSchema):
@@ -357,3 +360,22 @@ class ChatResponse(BaseModel):
             }
         
         return response
+
+class StorageRequest(BaseModel):
+    """Storage task request"""
+    action: str  # upload, get, delete, list
+    file_id: Optional[str] = None
+    content: Optional[bytes] = None
+    filename: Optional[str] = None
+    purpose: Optional[str] = None
+    model: Optional[str] = None  # Add model field for handler routing
+    metadata: Optional[Dict[str, Any]] = None
+
+class StorageResponse(BaseModel):
+    """Storage task response"""
+    file_id: str
+    filename: str
+    content: Optional[bytes] = None
+    created_at: int = Field(default_factory=lambda: int(time.time()))
+    metadata: Optional[Dict[str, Any]] = None
+    deleted: Optional[bool] = None

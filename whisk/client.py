@@ -68,7 +68,7 @@ class WhiskClient:
     def __init__(
         self,
         nats_url: str = "nats://localhost:4222",
-        client_id: str = "whisk_client",
+        client_id: str = None,
         user: str = None,
         password: str = None,
         is_kitchenai: bool = False,
@@ -142,7 +142,6 @@ class WhiskClient:
             else "kitchenai.service"
         )
 
-
         args = ("queue",)
         # Setup subscribers
         self.handle_query = self.broker.subscriber(f"{client_prefix}.query.*", *args)(
@@ -152,10 +151,6 @@ class WhiskClient:
             f"{client_prefix}.heartbeat", *args
         )(self._handle_heartbeat)
 
-        # TODO: Uncomment this when we have streaming WIP
-        # self.handle_query_stream = self.broker.subscriber(
-        #     f"{client_prefix}.query.*.stream", *args
-        # )(self._handle_query_stream)
         self.handle_storage = self.broker.subscriber(
             f"{client_prefix}.storage.*",
             *args,
@@ -165,13 +160,6 @@ class WhiskClient:
             *args,
         )(self._handle_storage_delete)
 
-        # TODO: Uncomment this when we have embeddings WIP
-        # self.handle_embed = self.broker.subscriber(
-        #     f"{client_prefix}.embedding.*", *args
-        # )(self._handle_embed)
-        # self.handle_embed_delete = self.broker.subscriber(
-        #     f"{client_prefix}.embedding.*.delete", *args
-        # )(self._handle_embed_delete)
 
     async def _handle_query(
         self, msg: QueryRequestMessage, logger: Logger

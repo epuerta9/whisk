@@ -11,6 +11,7 @@ from whisk.kitchenai_sdk.http_schema import (
     ChatCompletionChoice,
     ChatResponseMessage
 )
+from whisk.api.chat import router as chat_router, get_kitchen_app  # Import the router and get_kitchen_app
 
 # Test fixtures
 @pytest.fixture
@@ -65,7 +66,20 @@ class TestFastAPIRouter:
         return router.router  # Return the FastAPI app directly
     
     @pytest.fixture
-    def client(self, app):
+    def client(self, kitchen):
+        # Add test chat handler
+        @kitchen.chat.handler("test-model")
+        async def test_handler(request):
+            return {
+                "choices": [{
+                    "message": {"role": "assistant", "content": "Test response"},
+                    "finish_reason": "stop"
+                }]
+            }
+
+        app = FastAPI()
+        app.include_router(chat_router)  # Use imported router
+        app.dependency_overrides[get_kitchen_app] = lambda: kitchen
         return TestClient(app)
     
     def test_chat_completions_endpoint(self, client):

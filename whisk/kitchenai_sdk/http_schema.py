@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field, PrivateAttr
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 import time
 from pydantic import ConfigDict
+from pydantic import field_validator
 
 
 """
@@ -9,15 +10,25 @@ Extra body for file requests using the OpenAI API
 """
 
 class FileExtraBody(BaseModel):
-    client_id: str
-    namespace: str
-    label: str
-    version: str | None = None
-    metadata: str | None = None
+    """
+    Extra body for file requests.
+    model: Format can be either:
+        - "@namespace-version/label" (e.g. "@whisk-v1/my-handler")
+        - "label" (e.g. "my-handler")
+    metadata: Optional metadata as string ("key1=value1,key2=value2") or dict
+    """
+    model: str = Field(..., description="Model identifier in format '@namespace-version/label' or 'label'")
+    metadata: Optional[Union[str, Dict[str, Any]]] = Field(default=None, description="Additional metadata")
 
-class ChatExtraBody(BaseModel):
-    namespace: str | None = None
-    version: str | None = None
+    @field_validator('metadata')
+    def validate_metadata(cls, v):
+        if isinstance(v, str):
+            # Convert string format to dict
+            try:
+                return dict(item.split("=") for item in v.split(","))
+            except Exception as e:
+                raise ValueError(f"Invalid metadata string format. Expected 'key1=value1,key2=value2', got {v}")
+        return v
 
 class Message(BaseModel):
     role: str
@@ -75,3 +86,39 @@ class ChatCompletionChunk(BaseModel):
     created: int
     model: str
     choices: List[ChatCompletionChunkChoice]
+
+class FileResponse(BaseModel):
+    """OpenAI-compatible file response"""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    id: str = Field(..., description="The file identifier.")
+    object: str = Field("file", description="Always 'file'.")
+    bytes: int = Field(..., description="The size of the file in bytes.")
+    created_at: int = Field(..., description="Unix timestamp (in seconds) of when the file was created.")
+    filename: str = Field(..., description="The name of the file.")
+    purpose: str = Field(..., description="Intended purpose of the file.")
+    status: Optional[str] = Field(None, description="Status of the file.")
+    status_details: Optional[str] = Field(None, description="Additional status details.")
+
+class FileListResponse(BaseModel):
+    """
+    OpenAI-compatible file list response with pagination support.
+    Matches the format expected by SyncCursorPage[FileObject].
+    """
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    object: str = Field("list", description="Always 'list' for a list of files.")
+    data: List[FileResponse]
+    has_more: bool = Field(False, description="Whether there are more files to fetch")
+    first_id: Optional[str] = Field(None, description="ID of the first file in the list")
+    last_id: Optional[str] = Field(None, description="ID of the last file in the list")
+    after: Optional[str] = Field(None, description="Cursor for fetching next page")
+    before: Optional[str] = Field(None, description="Cursor for fetching previous page")
+
+class FileDeleteResponse(BaseModel):
+    """OpenAI-compatible file deletion response"""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    id: str = Field(..., description="The file identifier.")
+    object: str = Field("file", description="Always 'file'.")
+    deleted: bool = Field(..., description="Indicates if the file was deleted successfully.")

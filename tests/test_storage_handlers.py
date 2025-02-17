@@ -10,6 +10,7 @@ async def test_basic_storage_handler(kitchen, storage_data):
         assert data.data == storage_data.data
         return WhiskStorageResponseSchema(
             id=data.id,
+            name=data.name,
             status="complete"
         )
     
@@ -27,6 +28,7 @@ async def test_storage_handler_with_vector_store(kitchen, storage_data, mock_vec
         assert vector_store == mock_vector_store
         return WhiskStorageResponseSchema(
             id=data.id,
+            name=data.name,
             status="complete"
         )
     

@@ -25,20 +25,14 @@ class WhiskRouter:
         self,
         kitchen: KitchenAIApp,
         config: WhiskConfig,
-        enable_commands: bool = False
+        app: FastAPI = None
     ):
         self.kitchen = kitchen
         self.config = config
-        logger.info(f"Initializing FastAPIRouter with enable_commands={enable_commands}")
+        logger.info(f"Initializing FastAPIRouter with app={app}")
         
-        self.router = FastAPI(
-            title="Whisk API",
-            description="KitchenAI API server",
-            version="1.0.0",
-            openapi_url="/openapi.json",
-            docs_url="/docs",
-            redoc_url="/redoc"
-        )
+        # Create FastAPI app if not provided
+        self.router = app or FastAPI()
         
         # Add CORS middleware
         self.router.add_middleware(
@@ -57,19 +51,17 @@ class WhiskRouter:
     
     def _setup_routes(self):
         """Setup all API routes"""
-        prefix = self.config.server.fastapi.prefix
+        # Mount API routers without prefix since routes already include /v1
+        self.router.include_router(models_router)  # Remove prefix
+        self.router.include_router(chat_router)    # Remove prefix
+        self.router.include_router(files_router)   # Remove prefix
         
-        # Mount API routers with prefix
-        self.router.include_router(models_router, prefix=prefix)
-        self.router.include_router(chat_router, prefix=prefix)
-        self.router.include_router(files_router, prefix=prefix)
-        
-        # Add OPTIONS and GET handlers for models
-        @self.router.options(f"{prefix}/models")
+        # Add OPTIONS and GET handlers for models - update paths to not include /v1
+        @self.router.options("/models")  # Remove /v1 prefix
         async def models_options():
             return {}
         
-        @self.router.get(f"{prefix}/models")
+        @self.router.get("/models")  # Remove /v1 prefix
         async def list_models():
             """List available models"""
             # Get all registered chat handlers as models
@@ -87,12 +79,12 @@ class WhiskRouter:
                 ]
             }
         
-        @self.router.options(f"{prefix}/chat/completions")
+        @self.router.options("/chat/completions")  # Remove /v1 prefix
         async def chat_options():
             return {}
         
         # Setup chat completions endpoint
-        @self.router.post(f"{prefix}/chat/completions")
+        @self.router.post("/chat/completions")  # Remove /v1 prefix
         async def chat_completions(request: Request):
             data = await request.json()
             chat_request = ChatCompletionRequest(**data)
