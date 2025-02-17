@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict, computed_field, Field, PrivateAttr
 from typing import List, Optional, Dict, Any, Callable, Union
 from enum import StrEnum, auto
 import time
+from .http_schema import Message
 
 
 class TokenCountSchema(BaseModel):
@@ -33,7 +34,7 @@ class ChatMessage(BaseModel):
     name: Optional[str] = None
 
 class ChatCompletionRequest(BaseModel):
-    messages: List[ChatMessage]
+    messages: List[Message]
     model: str = "default"
     stream: bool = False
     stream_id: Optional[str] = None
@@ -287,6 +288,7 @@ class ChatInput(BaseModel):
     stream: bool = False
     temperature: float = 0.7
     max_tokens: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
     
     @classmethod
     def from_request(cls, request: Any) -> "ChatInput":
@@ -312,7 +314,8 @@ class ChatInput(BaseModel):
             model=request.model,
             stream=request.stream,
             temperature=request.temperature or 0.7,
-            max_tokens=request.max_tokens
+            max_tokens=request.max_tokens,
+            metadata=request.metadata
         )
 
 # Output types

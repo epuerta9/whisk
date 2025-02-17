@@ -1,7 +1,8 @@
 from typing import Dict, Any, Callable, Union
 from functools import wraps
 from ..base import TaskRegistry
-from ..schema import ChatInput, ChatResponse, ChatCompletionResponse, DependencyType
+from ..schema import ChatInput, ChatResponse, DependencyType
+from ..http_schema import ChatCompletionResponse, ChatResponseMessage, ChatCompletionChoice
 
 class ChatTask(TaskRegistry):
     """Chat task registry"""
@@ -25,6 +26,10 @@ class ChatTask(TaskRegistry):
                         else:
                             raise KeyError(f"Required dependency {dep} not found")
 
+                # If request is already a ChatCompletionResponse, return it directly
+                if isinstance(request, ChatCompletionResponse):
+                    return request
+
                 # Convert OpenAI request to simplified input
                 chat_input = ChatInput.from_request(request)
                 
@@ -34,26 +39,47 @@ class ChatTask(TaskRegistry):
                 # If response is already in OpenAI format, return it directly
                 if isinstance(response, ChatCompletionResponse):
                     return response
-                
+
+                # Get content from response
+                if hasattr(response, 'content'):
+                    content = response.content
+                elif isinstance(response, dict):
+                    if 'choices' in response:
+                        choice = response['choices'][0]
+                        if isinstance(choice, dict) and 'message' in choice:
+                            content = choice['message']['content']
+                        elif isinstance(choice, dict):
+                            content = choice.get('content', '')
+                        else:
+                            content = choice.message.content
+                    elif 'content' in response:
+                        content = response['content']
+                    else:
+                        content = "No content found"  # Fallback
+                else:
+                    content = response.choices[0].message.content
+
                 # Convert simplified response to OpenAI format
                 openai_response = ChatCompletionResponse(
                     model=request.model,
-                    choices=[{
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": response.content
-                        },
-                        "finish_reason": "stop"
-                    }]
+                    choices=[
+                        ChatCompletionChoice(
+                            index=0,
+                            message=ChatResponseMessage(
+                                role="assistant",
+                                content=content
+                            ),
+                            finish_reason="stop"
+                        )
+                    ]
                 )
 
                 # Include sources in response metadata if available and requested
-                if response.sources and (
+                if hasattr(response, 'sources') and response.sources and (
                     request.metadata and request.metadata.get("include_sources", False)
                 ):
                     openai_response.metadata = {
-                        "sources": [source.dict() for source in response.sources]
+                        "sources": [source.model_dump() for source in response.sources]
                     }
                 
                 return openai_response

@@ -1,6 +1,10 @@
 import pytest
 from whisk.kitchenai_sdk.schema import WhiskStorageStatus, DependencyType
-from whisk.kitchenai_sdk.schema import ChatCompletionRequest, ChatMessage
+from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
+from whisk.kitchenai_sdk.http_schema import (  # Import from http_schema
+    ChatCompletionRequest,
+    Message
+)
 
 @pytest.mark.asyncio
 async def test_query_handler_error(kitchen):
@@ -9,7 +13,7 @@ async def test_query_handler_error(kitchen):
         raise ValueError("Test error")
     
     request = ChatCompletionRequest(
-        messages=[ChatMessage(role="user", content="Hello")],
+        messages=[Message(role="user", content="Hello")],  # Use Message instead of ChatMessage
         model="test-model"
     )
     

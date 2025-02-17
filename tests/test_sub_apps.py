@@ -6,9 +6,13 @@ from whisk.kitchenai_sdk.schema import (
     WhiskStorageSchema,
     WhiskStorageResponseSchema,
     DependencyType,
+)
+from whisk.kitchenai_sdk.http_schema import (
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ChatMessage
+    ChatCompletionChoice,
+    ChatResponseMessage,
+    Message
 )
 
 @pytest.fixture
@@ -19,11 +23,16 @@ def chat_app():
     async def basic_chat(request: ChatCompletionRequest):
         return ChatCompletionResponse(
             model=request.model,
-            choices=[{
-                "index": 0,
-                "message": {"role": "assistant", "content": "basic response"},
-                "finish_reason": "stop"
-            }]
+            choices=[
+                ChatCompletionChoice(
+                    index=0,
+                    message=ChatResponseMessage(
+                        role="assistant",
+                        content="basic response"
+                    ),
+                    finish_reason="stop"
+                )
+            ]
         )
     
     @app.chat.handler("stream")
@@ -99,12 +108,13 @@ async def test_mounted_handlers_execution(chat_app, rag_app):
     # Get and execute the mounted handler
     handler = main_app.chat.get_task("chat.basic")
     request = ChatCompletionRequest(
-        messages=[ChatMessage(role="user", content="Hello")],
+        messages=[Message(role="user", content="Hello")],
         model="test-model"
     )
     response = await handler(request)
     
-    assert response.choices[0]["message"]["content"] == "basic response"
+    assert response.choices[0].message.content == "basic response"
+    assert response.model == "test-model"
 
 def test_mount_app_propagates_new_dependencies(chat_app, rag_app):
     """Test that new dependencies are propagated to mounted apps"""

@@ -27,11 +27,27 @@ def get_kitchen_app() -> KitchenAIApp:
     from whisk.examples.app import kitchen
     return kitchen
 
-def get_chat_task(kitchen: Annotated[KitchenAIApp, Depends(get_kitchen_app)]) -> Callable:
-    """Dependency to get the chat completion task"""
-    task = kitchen.chat.get_task("chat.completions")
+def get_chat_task(
+    request: ChatCompletionRequest,
+    kitchen: Annotated[KitchenAIApp, Depends(get_kitchen_app)]
+) -> Callable:
+    """Get the appropriate chat task based on the request"""
+    # Extract handler name from model field
+    if "/" in request.model:
+        # Format: "@namespace-version/handler"
+        handler = request.model.split("/")[-1]
+    else:
+        # Default to chat.completions if no specific handler requested
+        handler = "chat.completions"
+    
+    # Get the task
+    task = kitchen.chat.get_task(handler)
     if not task:
-        raise HTTPException(status_code=404, detail="Chat handler not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chat handler '{handler}' not found"
+        )
+    
     return task
 
 def parse_system_metadata(messages: List[Dict[str, str]]) -> Dict[str, Any]:
