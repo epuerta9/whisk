@@ -12,6 +12,14 @@ Whisk is a flexible runtime framework for building AI applications with support 
 * Easy to deploy
 * Easy to scale
 
+## Installation
+
+```bash
+pip install kitchenai-whisk
+```
+
+## Quick Start
+
 Turn your AI functions into model-like APIs with a simple decorator:
 
 ```python
@@ -125,6 +133,24 @@ async def storage_handler(data: WhiskStorageSchema) -> WhiskStorageResponseSchem
         )
 ```
 
+```python
+import json
+
+from whisk.kitchenai_sdk.http_schema import FileExtraBody   
+
+file_extra_body = FileExtraBody(
+    model="@whisk-example-app-0.0.1/storage",
+    metadata="user_id=123,other_key=value"  # Changed to string format
+)
+
+response = client.files.create(
+    file=open("README.md", "rb"),
+    purpose="chat",
+    extra_body=file_extra_body.model_dump()
+)
+print(response)
+```
+
 ## Running Your App
 
 ```python
@@ -137,94 +163,6 @@ router = WhiskRouter(kitchen_app=kitchen, config=config)
 
 # Run the server
 router.run(host="0.0.0.0", port=8000)
-```
-
-![openwebui](./docs/images/openwebui.png)
-
-
-
-
-## Installation
-
-```bash
-pip install kitchenai-whisk
-```
-
-## Quick Start
-
-```python
-from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
-from whisk.config import WhiskConfig, ServerConfig, FastAPIConfig
-from whisk.router import WhiskRouter
-
-# Create app
-app = KitchenAIApp(namespace="my-app")
-
-# Add a chat handler
-@app.chat.handler("my-model")
-async def handle_chat(request):
-    return {
-        "choices": [{
-            "message": {"role": "assistant", "content": "Hello!"},
-            "finish_reason": "stop"
-        }]
-    }
-
-# Configure and run
-config = WhiskConfig(
-    server=ServerConfig(
-        type="fastapi",
-        fastapi=FastAPIConfig(
-            host="0.0.0.0",
-            port=8000,
-            prefix="/v1"
-        )
-    )
-)
-
-router = WhiskRouter(app, config)
-router.run()
-```
-
-## Handler Types
-
-### Chat Handlers
-
-```python
-@app.chat.handler("chat.completions")
-async def handle_chat(request):
-    """Handle chat completions"""
-    messages = request.messages
-    response = await your_llm(messages)
-    return {
-        "choices": [{
-            "message": {"role": "assistant", "content": response},
-            "finish_reason": "stop"
-        }]
-    }
-```
-
-### Storage Handlers
-
-```python
-@app.storage.handler("local")
-async def handle_storage(request):
-    """Handle file storage"""
-    if request.action == "upload":
-        # Handle file upload
-        return {
-            "id": "file-123",
-            "name": request.filename,
-            "created_at": int(time.time())
-        }
-    elif request.action == "list":
-        # Return file list
-        return {
-            "files": [
-                {"id": 1, "name": "file1.txt"},
-                {"id": 2, "name": "file2.txt"}
-            ]
-        }
 ```
 
 
@@ -243,9 +181,22 @@ from whisk.router import WhiskRouter
 kitchen_app = KitchenAIApp(namespace="my-app")
 
 # Add your handlers
-@kitchen_app.chat.handler("my-model")
-async def handle_chat(request):
-    return {"response": "Hello!"}
+@kitchen.chat.handler("chat.completions")
+async def handle_chat(request: ChatCompletionRequest) -> ChatCompletionResponse:
+    """Simple chat handler that echoes back the last message"""
+    return ChatCompletionResponse(
+        model=request.model,
+        choices=[
+            ChatCompletionChoice(
+                index=0,
+                message=ChatResponseMessage(
+                    role="assistant",
+                    content=f"Echo: {request.messages[-1].content}"
+                ),
+                finish_reason="stop"
+            )
+        ]
+    )
 
 # Create your FastAPI app with custom auth
 fastapi_app = FastAPI()
@@ -327,11 +278,35 @@ router = WhiskRouter(kitchen_app, config)
 # Run with custom host/port
 router.run(host="0.0.0.0", port=8000)
 
-# In a Jupyter notebook
+```
+
+## Dependencies
+
+Whisk supports dependency injection for handlers:
+
+```python
+from whisk.kitchenai_sdk.schema import DependencyType
+
+# Register dependency
+vector_store = MyVectorStore()
+app.register_dependency(DependencyType.VECTOR_STORE, vector_store)
+
+# Use in handler
+@kitchen.chat.handler("chat.rag", DependencyType.VECTOR_STORE, DependencyType.LLM)
+async def rag_handler(chat: ChatInput, vector_store, llm) -> ChatResponse:
+    # vector_store is automatically injected
+    docs = await vector_store.search(request.messages[-1].content)
+    return {"response": f"Found docs: {docs}"}
+```
+
+## Jupyter Notebook Usage
+
+```python
 import nest_asyncio
 nest_asyncio.apply()
 
-router = WhiskRouter(kitchen_app, config)
+# Create and run
+router = WhiskRouter(kitchen, config)
 router.run()
 ```
 
@@ -364,35 +339,7 @@ client:
   type: bento_box
 ```
 
-## Dependencies
 
-Whisk supports dependency injection for handlers:
-
-```python
-from whisk.kitchenai_sdk.schema import DependencyType
-
-# Register dependency
-vector_store = MyVectorStore()
-app.register_dependency(DependencyType.VECTOR_STORE, vector_store)
-
-# Use in handler
-@app.chat.handler("rag", DependencyType.VECTOR_STORE)
-async def handle_rag(request, vector_store=None):
-    # vector_store is automatically injected
-    docs = await vector_store.search(request.messages[-1].content)
-    return {"response": f"Found docs: {docs}"}
-```
-
-## Jupyter Notebook Usage
-
-```python
-import nest_asyncio
-nest_asyncio.apply()
-
-# Create and run
-router = WhiskRouter(kitchen, config)
-router.run()
-```
 
 ## API Reference
 
@@ -408,7 +355,7 @@ Contributions welcome! Please read our [contributing guidelines](CONTRIBUTING.md
 
 ## License
 
-MIT License
+Apache 2.0 License
 
 Copyright (c) 2024 Whisk
 
