@@ -14,7 +14,20 @@ Whisk is a flexible runtime framework for building AI applications with support 
 
 Turn your AI functions into model-like APIs with a simple decorator:
 
+Now your functions can act like this 
+
+```python
+response = client.chat.completions.create(
+    model="@whisk-example-app-0.0.1/chat.completions",
+    messages=[{"role": "user", "content": "whats the most important part of the readme?"}],
+    metadata={"user_id": "123"},
+)
+```
+
 ![openwebui](./docs/images/openwebui.png)
+
+
+
 
 ## Installation
 
