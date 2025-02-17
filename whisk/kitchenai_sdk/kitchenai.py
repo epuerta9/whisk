@@ -1,10 +1,8 @@
-from whisk.kitchenai_sdk.taxonomy.chat import ChatTask
-from whisk.kitchenai_sdk.taxonomy.storage import StorageTask
-from whisk.kitchenai_sdk.taxonomy.embeddings import EmbedTask
-from whisk.kitchenai_sdk.taxonomy.agent import AgentTask
+from .taxonomy.chat import ChatTask
+from .taxonomy.storage import StorageTask
+from .taxonomy.embeddings import EmbedTask
+from .taxonomy.agent import AgentTask
 from .base import DependencyManager
-from .schema import DependencyType
-from typing import Any
 
 
 class KitchenAIApp:

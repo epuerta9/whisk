@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Union, Dict, Any, AsyncGenerator
+from typing import List, Optional, Union, Dict, Any, AsyncGenerator, Annotated, Callable
 import json
 import time
 import asyncio
@@ -26,6 +26,13 @@ def get_kitchen_app() -> KitchenAIApp:
     """Dependency to get the KitchenAI app instance"""
     from whisk.examples.app import kitchen
     return kitchen
+
+def get_chat_task(kitchen: Annotated[KitchenAIApp, Depends(get_kitchen_app)]) -> Callable:
+    """Dependency to get the chat completion task"""
+    task = kitchen.chat.get_task("chat.completions")
+    if not task:
+        raise HTTPException(status_code=404, detail="Chat handler not found")
+    return task
 
 def parse_system_metadata(messages: List[Dict[str, str]]) -> Dict[str, Any]:
     """Extract metadata from system messages"""
@@ -55,11 +62,15 @@ def parse_system_metadata(messages: List[Dict[str, str]]) -> Dict[str, Any]:
     
     return metadata
 
-async def stream_response(task, request: ChatCompletionRequest):
-    """Helper method to handle streaming responses"""
+async def stream_response(task: Callable, request: ChatCompletionRequest):
+    """Stream chat completion response"""
     response = await task(request)
     
-    # Format each chunk as SSE
+    # Handle dict response
+    if isinstance(response, dict):
+        response = ChatCompletionResponse(**response)
+    
+    # Send initial chunk
     for choice in response.choices:
         chunk = {
             "id": response.id,
@@ -67,10 +78,10 @@ async def stream_response(task, request: ChatCompletionRequest):
             "created": response.created,
             "model": response.model,
             "choices": [{
-                "index": choice["index"],
+                "index": choice.index if hasattr(choice, 'index') else 0,
                 "delta": {
                     "role": "assistant",
-                    "content": choice["message"]["content"]
+                    "content": choice.message.content if hasattr(choice, 'message') else choice["message"]["content"]
                 },
                 "finish_reason": None
             }]
@@ -95,13 +106,9 @@ async def stream_response(task, request: ChatCompletionRequest):
 @router.post("/chat/completions", response_model=None)
 async def chat_completions(
     request: ChatCompletionRequest,
-    kitchen: KitchenAIApp = Depends(get_kitchen_app)
-):
-    """Create a chat completion"""
-    task = kitchen.chat.get_task("chat.completions")
-    if not task:
-        raise HTTPException(status_code=404, detail="Chat handler not found")
-    
+    task: Annotated[Callable, Depends(get_chat_task)]
+) -> Union[ChatCompletionResponse, StreamingResponse]:
+    """Chat completion endpoint"""
     if request.stream:
         return StreamingResponse(
             stream_response(task, request),
@@ -109,4 +116,7 @@ async def chat_completions(
         )
     
     response = await task(request)
+    # Convert dict response to ChatCompletionResponse if needed
+    if isinstance(response, dict):
+        return ChatCompletionResponse(**response)
     return response 

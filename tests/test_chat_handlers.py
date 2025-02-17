@@ -4,7 +4,9 @@ from whisk.kitchenai_sdk.schema import (
     ChatMessage,
     ChatCompletionRequest,
     ChatCompletionResponse,
-    TokenCountSchema
+    TokenCountSchema,
+    ChatInput,
+    ChatResponse
 )
 from whisk.kitchenai_sdk.schema import DependencyType
 
@@ -42,41 +44,29 @@ async def test_basic_chat_handler(kitchen):
     assert response.choices[0]["message"]["content"] == "Test response"
     assert response.model == "test-model"
 
+@pytest.mark.asyncio
 async def test_chat_handler_with_llm(kitchen):
     """Test chat handler with LLM dependency"""
-    
+
     class MockLLM:
         async def complete(self, messages):
             return "LLM response"
-    
+
     llm = MockLLM()
     kitchen.register_dependency(DependencyType.LLM, llm)
-    
+
     @kitchen.chat.handler("chat.completions", DependencyType.LLM)
-    async def handle_chat(request: ChatCompletionRequest, llm: MockLLM):
-        response = await llm.complete(request.messages)
-        return ChatCompletionResponse(
-            model=request.model,
-            choices=[{
-                "index": 0,
-                "message": {
-                    "role": "assistant", 
-                    "content": response
-                },
-                "finish_reason": "stop"
-            }]
-        )
+    async def handle_chat(chat: ChatInput, llm: MockLLM) -> ChatResponse:
+        response = await llm.complete(chat.messages)
+        return ChatResponse(content=response)
 
     request = ChatCompletionRequest(
-        messages=[
-            ChatMessage(role="user", content="Hello")
-        ],
+        messages=[ChatMessage(role="user", content="Hello")],
         model="test-model"
     )
-    
+
     handler = kitchen.chat.get_task("chat.completions")
     response = await handler(request)
-    
     assert response.choices[0]["message"]["content"] == "LLM response"
 
 async def test_chat_handler_with_token_counts(kitchen):

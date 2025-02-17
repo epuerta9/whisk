@@ -6,7 +6,9 @@ from whisk.kitchenai_sdk.schema import (
     WhiskStorageSchema,
     WhiskStorageResponseSchema,
     WhiskEmbedSchema,
-    WhiskEmbedResponseSchema
+    WhiskEmbedResponseSchema,
+    ChatInput,
+    ChatResponse
 )
 try:
     from llama_index.llms.openai import OpenAI
@@ -26,20 +28,16 @@ llm = OpenAI(
 logger = logging.getLogger(__name__)
 
 @kitchen.chat.handler("chat.completions")
-async def chat_handler(request: ChatCompletionRequest) -> ChatCompletionResponse:
+async def chat_handler(chat: ChatInput) -> ChatResponse:
     """Chat completion handler"""
-    response = await llm.acomplete(request.messages[-1].content)
-    return ChatCompletionResponse(
-        model=request.model,
-        choices=[{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": response.text
-            },
-            "finish_reason": "stop"
-        }]
-    )
+    # Get last message content
+    prompt = chat.messages[-1].content
+    
+    # Get response from LLM
+    response = await llm.acomplete(prompt)
+    
+    # Return simplified response
+    return ChatResponse(content=response.text)
 
 @kitchen.storage.handler("storage")
 async def storage_handler(data: WhiskStorageSchema) -> WhiskStorageResponseSchema:
@@ -47,12 +45,4 @@ async def storage_handler(data: WhiskStorageSchema) -> WhiskStorageResponseSchem
     return WhiskStorageResponseSchema(
         id=data.id,
         status="complete"
-    )
-
-@kitchen.embeddings.handler("embed")
-async def embed_handler(data: WhiskEmbedSchema) -> WhiskEmbedResponseSchema:
-    """Embedding handler"""
-    return WhiskEmbedResponseSchema(
-        id=data.id,
-        embeddings=[[0.1, 0.2, 0.3]]  # Example embeddings
     )

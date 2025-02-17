@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, computed_field, Field, PrivateAttr
-from typing import List, Optional, Dict, Any, Callable
+from typing import List, Optional, Dict, Any, Callable, Union
 from enum import StrEnum, auto
 import time
 
@@ -272,3 +272,85 @@ class DependencyType(str, auto):
     SYSTEM_PROMPT = "system_prompt"
     EMBEDDINGS = "embeddings"
     RETRIEVER = "retriever"
+
+# Input types
+class Message(BaseModel):
+    """A single chat message"""
+    role: str
+    content: str
+    name: Optional[str] = None
+
+class ChatInput(BaseModel):
+    """Simplified chat input"""
+    messages: List[Message]
+    model: str = "default"
+    stream: bool = False
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+    
+    @classmethod
+    def from_request(cls, request: Any) -> "ChatInput":
+        """Create from OpenAI request"""
+        messages = []
+        for msg in request.messages:
+            if isinstance(msg, dict):
+                messages.append(Message(**msg))
+            elif isinstance(msg, Message):
+                messages.append(msg)
+            elif hasattr(msg, 'role') and hasattr(msg, 'content'):
+                # Handle http_schema.Message and other message-like objects
+                messages.append(Message(
+                    role=msg.role,
+                    content=msg.content,
+                    name=getattr(msg, 'name', None)
+                ))
+            else:
+                raise ValueError(f"Invalid message type: {type(msg)}")
+                
+        return cls(
+            messages=messages,
+            model=request.model,
+            stream=request.stream,
+            temperature=request.temperature or 0.7,
+            max_tokens=request.max_tokens
+        )
+
+# Output types
+class SourceNode(BaseModel):
+    """Source document with metadata"""
+    text: str
+    metadata: Dict[str, Any]
+    score: Optional[float] = None
+
+class ChatResponse(BaseModel):
+    """Simplified chat response"""
+    content: str
+    role: str = "assistant"
+    name: Optional[str] = None
+    sources: Optional[List[SourceNode]] = None  # Added for RAG responses
+
+    def to_openai_response(self, model: str = "default") -> Dict[str, Any]:
+        """Convert to OpenAI format"""
+        response = {
+            "id": f"chat-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": self.role,
+                    "content": self.content,
+                    **({"name": self.name} if self.name else {})
+                },
+                "finish_reason": "stop"
+            }]
+        }
+        
+        # Include sources in response metadata if available
+        if self.sources:
+            response["metadata"] = {
+                "sources": [source.dict() for source in self.sources]
+            }
+        
+        return response
