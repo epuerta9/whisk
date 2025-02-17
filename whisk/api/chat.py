@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Union, Dict, Any, AsyncGenerator
@@ -15,8 +15,17 @@ from ..kitchenai_sdk.http_schema import (
     ChatCompletionChunkChoice,
     ChatCompletionChunkDelta
 )
+from ..kitchenai_sdk.kitchenai import KitchenAIApp
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(
+    prefix="/v1",
+    tags=["Chat"]
+)
+
+def get_kitchen_app() -> KitchenAIApp:
+    """Dependency to get the KitchenAI app instance"""
+    from whisk.examples.app import kitchen
+    return kitchen
 
 def parse_system_metadata(messages: List[Dict[str, str]]) -> Dict[str, Any]:
     """Extract metadata from system messages"""
@@ -46,72 +55,58 @@ def parse_system_metadata(messages: List[Dict[str, str]]) -> Dict[str, Any]:
     
     return metadata
 
-async def stream_response(content: str) -> AsyncGenerator[str, None]:
-    """Stream response in OpenAI-compatible format"""
-    # Split content into words for demonstration
-    words = content.split()
+async def stream_response(task, request: ChatCompletionRequest):
+    """Helper method to handle streaming responses"""
+    response = await task(request)
     
-    for i, word in enumerate(words):
-        chunk = ChatCompletionChunk(
-            id=f"chat-{time.time()}",
-            object="chat.completion.chunk",
-            created=int(time.time()),
-            model="whisk-default",
-            choices=[
-                ChatCompletionChunkChoice(
-                    index=0,
-                    delta=ChatCompletionChunkDelta(
-                        role="assistant" if i == 0 else None,
-                        content=word + " "
-                    ),
-                    finish_reason=None if i < len(words) - 1 else "stop"
-                )
-            ]
-        )
-        yield f"data: {chunk.json()}\n\n"
-        await asyncio.sleep(0.1)  # Simulate delay
+    # Format each chunk as SSE
+    for choice in response.choices:
+        chunk = {
+            "id": response.id,
+            "object": "chat.completion.chunk",
+            "created": response.created,
+            "model": response.model,
+            "choices": [{
+                "index": choice["index"],
+                "delta": {
+                    "role": "assistant",
+                    "content": choice["message"]["content"]
+                },
+                "finish_reason": None
+            }]
+        }
+        yield f"data: {json.dumps(chunk)}\n\n"
     
+    # Send final chunk with finish_reason
+    final_chunk = {
+        "id": response.id,
+        "object": "chat.completion.chunk",
+        "created": response.created,
+        "model": response.model,
+        "choices": [{
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop"
+        }]
+    }
+    yield f"data: {json.dumps(final_chunk)}\n\n"
     yield "data: [DONE]\n\n"
 
-@router.post("/chat/completions")
-async def create_chat_completion(request: ChatCompletionRequest) -> Union[ChatCompletionResponse, StreamingResponse]:
-    """OpenAI-compatible chat completions endpoint"""
+@router.post("/chat/completions", response_model=None)
+async def chat_completions(
+    request: ChatCompletionRequest,
+    kitchen: KitchenAIApp = Depends(get_kitchen_app)
+):
+    """Create a chat completion"""
+    task = kitchen.chat.get_task("chat.completions")
+    if not task:
+        raise HTTPException(status_code=404, detail="Chat handler not found")
     
-    # Extract metadata from system messages
-    metadata = parse_system_metadata(request.messages)
-    
-    # Convert to WhiskQuerySchema
-    query = WhiskQuerySchema(
-        input=request.messages[-1]["content"],  # Last user message
-        metadata=metadata,
-        stream=request.stream
-    )
-    
-    # Process query through kitchen
-    # ... implementation here ...
-    response_content = "This is a test response"  # Replace with actual response
-    
-    # Return streaming response if requested
     if request.stream:
         return StreamingResponse(
-            stream_response(response_content),
+            stream_response(task, request),
             media_type="text/event-stream"
         )
     
-    # Return normal response
-    return ChatCompletionResponse(
-        id=f"chat-{time.time()}",
-        object="chat.completion",
-        created=int(time.time()),
-        model=request.model,
-        choices=[
-            ChatCompletionChoice(
-                index=0,
-                message=ChatResponseMessage(
-                    role="assistant",
-                    content=response_content
-                ),
-                finish_reason="stop"
-            )
-        ]
-    ) 
+    response = await task(request)
+    return response 

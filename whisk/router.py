@@ -13,6 +13,9 @@ from .kitchenai_sdk.http_schema import (
     StreamingChatCompletionResponse
 )
 import json
+from .api.models import router as models_router
+from .api.chat import router as chat_router  # Import chat router
+from .api.files import router as files_router  # Add this import
 
 class WhiskRouter:
     def __init__(
@@ -25,6 +28,15 @@ class WhiskRouter:
         self.config = config
         self.app = fastapi_app
         
+        # Initialize FastAPI routes if needed
+        if config.server.type in ["fastapi", "both"] and self.app:
+            # Mount API routers first
+            self.app.include_router(models_router)
+            self.app.include_router(chat_router)
+            self.app.include_router(files_router)
+            # Then setup any additional routes
+            self._setup_fastapi_routes()
+            
         # Initialize NATS router only if explicitly configured
         if (config.server.type in ["nats", "both"] and 
             config.server.nats is not None and 
@@ -36,10 +48,6 @@ class WhiskRouter:
                 name=config.client.id
             )
             self._setup_nats_handlers()
-            
-        # Initialize FastAPI routes if needed
-        if config.server.type in ["fastapi", "both"] and self.app:
-            self._setup_fastapi_routes()
     
     def _setup_nats_handlers(self):
         """Setup NATS message handlers"""
@@ -112,5 +120,6 @@ class WhiskRouter:
     
     def mount(self):
         """Mount all routes and start services"""
+        # NATS router is mounted last if it exists
         if hasattr(self, 'nats_router'):
             self.app.include_router(self.nats_router) 

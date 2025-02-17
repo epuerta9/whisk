@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from ..config import WhiskConfig, ServerConfig, FastAPIConfig, NatsConfig
 from ..router import WhiskRouter
 
@@ -26,10 +27,29 @@ def create_app(kitchen_path: str, config: WhiskConfig):
     kitchen_module = importlib.import_module(module_path)
     kitchen = getattr(kitchen_module, attr)
     
-    # Create FastAPI app
-    app = FastAPI()
+    # Create FastAPI app with OpenAPI configuration
+    app = FastAPI(
+        title="Whisk API",
+        description="KitchenAI API server",
+        version="1.0.0",
+        openapi_url="/openapi.json",
+        docs_url="/docs",
+        redoc_url="/redoc"
+    )
+    
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Mount the router
     router = WhiskRouter(kitchen, config, app)
     router.mount()
+    
     return app
 
 def serve(

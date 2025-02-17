@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 @kitchen.chat.handler("chat.completions")
 async def chat_handler(request: ChatCompletionRequest) -> ChatCompletionResponse:
     """Chat completion handler"""
-    response = await llm.complete(request.messages[-1].content)
+    response = await llm.acomplete(request.messages[-1].content)
     return ChatCompletionResponse(
         model=request.model,
         choices=[{
