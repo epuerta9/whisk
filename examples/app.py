@@ -46,7 +46,6 @@ async def handle_chat(request: ChatCompletionRequest):
 async def handle_file(request: Dict[str, Any]) -> Dict[str, Any]:
     """Handle file operations with local storage"""
     action = request.get("action")
-    logger.info(f"File handler called with action: {action}")
     
     if action == "upload":
         # Generate unique file ID
@@ -69,7 +68,6 @@ async def handle_file(request: Dict[str, Any]) -> Dict[str, Any]:
         file_path = UPLOAD_DIR / file_id
         file_path.write_bytes(content)
         
-        logger.info(f"Uploaded file {filename} with ID {file_id}")
         return file_storage[file_id]
         
     elif action == "list":
@@ -99,7 +97,6 @@ async def handle_file(request: Dict[str, Any]) -> Dict[str, Any]:
             
         # Delete metadata
         metadata = file_storage.pop(file_id)
-        logger.info(f"Deleted file {metadata['filename']} with ID {file_id}")
         
         return {
             "id": file_id,

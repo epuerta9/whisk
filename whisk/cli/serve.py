@@ -1,34 +1,54 @@
-import uvicorn
-import logging
-from ..config import WhiskConfig, ServerConfig
+import typer
+from typing import Optional
+from ..config import load_config
 from ..router import WhiskRouter
+from ..examples.app import kitchen
 
-logger = logging.getLogger(__name__)
+app = typer.Typer()
 
 def get_application():
-    """Factory function for uvicorn"""
-    from whisk.examples.app import kitchen
-    
-    # Initialize router with config
-    config = WhiskConfig(server=ServerConfig(type="fastapi"))
-    router = WhiskRouter(kitchen=kitchen, config=config)
-    return router.router
+    """Get FastAPI application"""
+    config = load_config()
+    router = WhiskRouter(kitchen, config)
+    return router.app
 
+@app.command()
 def serve(
-    host: str = "0.0.0.0",
-    port: int = 8000,
-    reload: bool = True,
-    workers: int = 1,
-    log_level: str = "info",
+    config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to config file"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to bind to"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Port to bind to"),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload on code changes")
 ):
-    """Start the FastAPI server"""
-    # Start server with factory
-    uvicorn.run(
-        "whisk.cli.serve:get_application",
-        host=host,
-        port=port,
-        reload=reload,
-        workers=workers,
-        log_level=log_level,
-        factory=True
-    ) 
+    """Start the Whisk server"""
+    import uvicorn
+    
+    # Load config from file if provided
+    if config:
+        config = load_config(config)
+    else:
+        config = load_config()
+    
+    # Override host/port if provided
+    if host:
+        config.server.fastapi.host = host
+    if port:
+        config.server.fastapi.port = port
+
+    if reload:
+        uvicorn.run(
+            "whisk.cli.serve:get_application",
+            host=config.server.fastapi.host,
+            port=config.server.fastapi.port,
+            reload=True,
+            factory=True
+        )
+    else:
+        # Create router and run
+        router = WhiskRouter(kitchen, config)
+        router.run(
+            host=config.server.fastapi.host,
+            port=config.server.fastapi.port
+        )
+
+if __name__ == "__main__":
+    app() 

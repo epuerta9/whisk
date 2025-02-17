@@ -72,7 +72,6 @@ kitchen.register_dependency(DependencyType.VECTOR_STORE, index)
 async def handle_chat(request: ChatCompletionRequest):
     """Simple chat handler that forwards to OpenAI"""
     content = request.messages[-1].content
-    logger.info(f"Simple chat prompt: {content}")
     
     # Handle special OpenWebUI requests after commands
     if "### Task:" in content and "### Chat History:" in content:
@@ -80,7 +79,6 @@ async def handle_chat(request: ChatCompletionRequest):
         
         # If this is a title/tag request after a command, return empty
         if any(cmd in chat_history for cmd in ["/help", "/show", "/capabilities", "/chat", "/file", "/eval"]):
-            logger.info("Skipping title/tag generation for command response")
             return ChatCompletionResponse(
                 id=f"chatcmpl-{int(time.time())}",
                 object="chat.completion",
@@ -118,7 +116,6 @@ async def handle_chat(request: ChatCompletionRequest):
 @kitchen.chat.handler("chat.rag", DependencyType.VECTOR_STORE, DependencyType.LLM)
 async def rag_handler(chat: ChatInput, vector_store, llm) -> ChatResponse:
     """RAG-enabled chat handler"""
-    logger.info("RAG handler called")
     
     # Get the user's question
     question = chat.messages[-1].content
@@ -218,7 +215,6 @@ async def storage_handler(data: WhiskStorageSchema) -> WhiskStorageResponseSchem
             else:
                 content = temp_file_path.read_text()
                 documents = [Document(text=content)]
-            logger.info(f"Documents: {documents}")
             # Create a new vector store for this document
             doc_vector_store = SimpleVectorStore()
             doc_storage_context = StorageContext.from_defaults(

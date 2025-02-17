@@ -1,152 +1,104 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from faststream.nats.fastapi import NatsRouter
-from typing import Optional
+from typing import Optional, Callable
 from .config import WhiskConfig
 from .kitchenai_sdk.kitchenai import KitchenAIApp
-from .kitchenai_sdk.http_schema import (
-    ChatCompletionRequest,
-    ChatCompletionResponse
-)
-import json
-from .api.models import router as models_router
-from .api.chat import router as chat_router
-from .api.files import router as files_router
-from .api.commands import CommandMiddleware
+from .api import chat_router, files_router, models_router
 
 import logging
-
 logger = logging.getLogger(__name__)
 
+# Global kitchen app instance for dependency injection
+_current_kitchen_app = None
+
+def get_kitchen_app() -> KitchenAIApp:
+    """Dependency to get KitchenAI app instance"""
+    return _current_kitchen_app
+
 class WhiskRouter:
-    """FastAPI router with command support"""
+    """Router for Whisk API endpoints"""
     def __init__(
-        self,
-        kitchen: KitchenAIApp,
+        self, 
+        kitchen_app: KitchenAIApp, 
         config: WhiskConfig,
-        app: FastAPI = None
+        fastapi_app: Optional[FastAPI] = None,
+        before_setup: Optional[Callable[[FastAPI], None]] = None,
+        after_setup: Optional[Callable[[FastAPI], None]] = None
     ):
-        self.kitchen = kitchen
+        """
+        Initialize WhiskRouter
+        
+        Args:
+            kitchen_app: KitchenAI application instance
+            config: WhiskConfig instance
+            fastapi_app: Optional FastAPI app to use instead of creating new one
+            before_setup: Optional callback to run before setting up routes
+            after_setup: Optional callback to run after setting up routes
+        """
+        self.kitchen_app = kitchen_app
         self.config = config
-        logger.info(f"Initializing FastAPIRouter with app={app}")
-        
-        # Create FastAPI app if not provided
-        self.router = app or FastAPI()
-        
+        self._fastapi_app = fastapi_app
+        self.before_setup = before_setup
+        self.after_setup = after_setup
+
+        # Store kitchen app for dependency injection
+        global _current_kitchen_app
+        _current_kitchen_app = kitchen_app
+
+    @property
+    def app(self) -> FastAPI:
+        """Get or create the FastAPI app"""
+        if self._fastapi_app is None:
+            self._fastapi_app = self._create_fastapi_app()
+        return self._fastapi_app
+
+    def _create_fastapi_app(self) -> FastAPI:
+        """Create and configure the FastAPI app"""
+        # Create base FastAPI app
+        fastapi_app = FastAPI(
+            title="Whisk API",
+            description="API for Whisk AI services",
+            version="1.0.0",
+            # Move docs to root
+            docs_url="/docs",
+            redoc_url="/redoc",
+            openapi_url="/openapi.json"
+        )
+
+        # Run pre-setup callback
+        if self.before_setup:
+            self.before_setup(fastapi_app)
+
         # Add CORS middleware
-        self.router.add_middleware(
+        fastapi_app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+        # Add kitchen app dependency and include routers
+        for router in [chat_router, files_router, models_router]:
+            router.dependencies = [Depends(get_kitchen_app)]
+            fastapi_app.include_router(router)  # Routers already have /v1 prefix
+
+        # Run post-setup callback
+        if self.after_setup:
+            self.after_setup(fastapi_app)
+
+        return fastapi_app
+
+    def run(self, host: Optional[str] = None, port: Optional[int] = None):
+        """Run the FastAPI server"""
+        import uvicorn
         
-        # Disable command middleware for now
-        self.command_middleware = None
+        host = host or self.config.server.fastapi.host
+        port = port or self.config.server.fastapi.port
         
-        # Setup routes
-        self._setup_routes()
-    
-    def _setup_routes(self):
-        """Setup all API routes"""
-        # Mount API routers without prefix since routes already include /v1
-        self.router.include_router(models_router)  # Remove prefix
-        self.router.include_router(chat_router)    # Remove prefix
-        self.router.include_router(files_router)   # Remove prefix
-        
-        # Add OPTIONS and GET handlers for models - update paths to not include /v1
-        @self.router.options("/models")  # Remove /v1 prefix
-        async def models_options():
-            return {}
-        
-        @self.router.get("/models")  # Remove /v1 prefix
-        async def list_models():
-            """List available models"""
-            # Get all registered chat handlers as models
-            handlers = self.kitchen.chat.list_tasks()
-            return {
-                "object": "list",
-                "data": [
-                    {
-                        "id": handler_name,
-                        "object": "model",
-                        "created": 1677610602,
-                        "owned_by": "whisk"
-                    }
-                    for handler_name in handlers
-                ]
-            }
-        
-        @self.router.options("/chat/completions")  # Remove /v1 prefix
-        async def chat_options():
-            return {}
-        
-        # Setup chat completions endpoint
-        @self.router.post("/chat/completions")  # Remove /v1 prefix
-        async def chat_completions(request: Request):
-            data = await request.json()
-            chat_request = ChatCompletionRequest(**data)
-            
-            # Get the task for the requested model
-            task = self.kitchen.chat.get_task(chat_request.model)
-            logger.info(f"Looking for handler for model: {chat_request.model}")
-            logger.info(f"Available handlers: {self.kitchen.chat.list_tasks()}")
-            
-            if not task:
-                raise HTTPException(status_code=404, detail=f"Chat handler not found for model: {chat_request.model}")
-            
-            # Handle streaming
-            if chat_request.stream:
-                return StreamingResponse(
-                    self._stream_response(task, chat_request),
-                    media_type="text/event-stream"
-                )
-            
-            # Normal response
-            response = await task(chat_request)
-            return response
-    
-    async def _stream_response(self, task, request: ChatCompletionRequest):
-        """Helper method to handle streaming responses"""
-        response = await task(request)
-        
-        # Format each chunk as SSE
-        for choice in response.choices:
-            chunk = {
-                "id": response.id,
-                "object": "chat.completion.chunk",
-                "created": response.created,
-                "model": response.model,
-                "choices": [{
-                    "index": choice.index,
-                    "delta": {
-                        "role": "assistant",
-                        "content": choice.message.content
-                    },
-                    "finish_reason": None
-                }]
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
-        
-        # Send final chunk with finish_reason
-        final_chunk = {
-            "id": response.id,
-            "object": "chat.completion.chunk",
-            "created": response.created,
-            "model": response.model,
-            "choices": [{
-                "index": 0,
-                "delta": {},
-                "finish_reason": "stop"
-            }]
-        }
-        yield f"data: {json.dumps(final_chunk)}\n\n"
-        yield "data: [DONE]\n\n"
-    
-    def mount(self):
-        """Mount all routes and start services"""
-        # NATS router is mounted last if it exists
-        if hasattr(self, 'nats_router'):
-            self.router.include_router(self.nats_router) 
+        uvicorn.run(
+            self.app,
+            host=host,
+            port=port,
+            log_level="info"
+        ) 

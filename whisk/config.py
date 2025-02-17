@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Optional, Literal
 import os
 import yaml
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, field_validator
 
 class ConfigError(Exception):
     """Base exception for configuration errors"""
@@ -19,6 +19,7 @@ class NatsConfig(BaseModel):
     url: str = "nats://localhost:4222"
     user: Optional[str] = None
     password: Optional[str] = None
+    client_id: Optional[str] = None
 
 class FastAPIConfig(BaseModel):
     host: str = "0.0.0.0"
@@ -29,18 +30,30 @@ class ChromaConfig(BaseModel):
     path: str = "chroma_db"
 
 class ServerConfig(BaseModel):
-    type: str = "fastapi"  # "fastapi", "nats", or "both"
-    fastapi: Optional[FastAPIConfig] = FastAPIConfig()
+    type: Literal["fastapi", "nats", "both"]
+    fastapi: Optional[FastAPIConfig] = None
     nats: Optional[NatsConfig] = None
 
-    @validator('type')
-    def validate_server_type(cls, v):
+    @field_validator("type")
+    def validate_type(cls, v):
         if v not in ["fastapi", "nats", "both"]:
-            raise ValueError(f"Invalid server type: {v}")
+            raise ValueError("Server type must be either 'fastapi', 'nats', or 'both'")
+        return v
+
+    @field_validator("fastapi")
+    def validate_fastapi(cls, v, values):
+        if values.data.get("type") in ["fastapi", "both"] and v is None:
+            return FastAPIConfig()
+        return v
+
+    @field_validator("nats")
+    def validate_nats(cls, v, values):
+        if values.data.get("type") in ["nats", "both"] and v is None:
+            return NatsConfig()
         return v
 
 class WhiskConfig(BaseModel):
-    server: ServerConfig = ServerConfig()
+    server: ServerConfig = ServerConfig(type="fastapi")
     client: Optional[ClientConfig] = None
     nats: Optional[NatsConfig] = None
     llm: Optional[dict] = None
@@ -91,4 +104,23 @@ class WhiskConfig(BaseModel):
         if "chroma" in config_data and isinstance(config_data["chroma"], str):
             config_data["chroma"] = {"path": config_data["chroma"]}
 
-        return cls(**config_data) 
+        return cls(**config_data)
+
+def load_config(config_path: Optional[str] = None) -> WhiskConfig:
+    """Load configuration from file or return default config"""
+    if config_path:
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+        
+        with open(path) as f:
+            config_dict = yaml.safe_load(f)
+            return WhiskConfig(**config_dict)
+    
+    # Return default config if no file provided
+    return WhiskConfig(
+        server=ServerConfig(
+            type="fastapi",
+            fastapi=FastAPIConfig()
+        )
+    ) 
