@@ -28,6 +28,7 @@ ENV/
 .venv
 env.bak/
 venv.bak/
+uploads/
 
 # IDE
 .idea/
