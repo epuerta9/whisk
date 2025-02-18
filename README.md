@@ -1,95 +1,164 @@
-# Whisk 🥄⚡
+# Whisk 🥄⚡ 
+**Effortless AI Microservices: Turn Your AI Logic into an OpenAI-Compatible API in Minutes.** 🚀
 
-**"Whisk – Effortless AI Microservices: Turn Your AI Logic into an OpenAI-Compatible API in Minutes."** 🚀
+Whisk removes the boilerplate of writing AI microservices—so you can focus on what matters: your models, your data, and your business logic. Whether you're a **data scientist**, an **AI engineer**, or a **developer**, Whisk helps you spin up an OpenAI API–compatible service in just a few lines of code. 
 
-Whisk is a flexible runtime framework for building AI applications with support for chat, file storage, and more. It provides a FastAPI-based HTTP API and easy-to-use handler system so you can focus on building your AI logic. 
+---
 
-* OpenWebUI compatible
-* OpenAI compatible
-* FastAPI compatible
-* Dependency injection
-* Easy to use
-* Easy to deploy
-* Easy to scale
+## Table of Contents 
+1. [Why Whisk?](#why-whisk)
+2. [Key Features](#key-features)
+3. [Quickstart](#quickstart)
+   - [Installation](#installation)
+   - [Minimal Chat Handler](#minimal-chat-handler)
+   - [Running Your Whisk App](#running-your-whisk-app)
+4. [Using Whisk with OpenWebUI](#using-whisk-with-openwebui)
+5. [Jupyter Notebook Integration](#jupyter-notebook-integration)
+6. [Examples](#examples)
+   - [RAG-Enabled Chat Handler](#rag-enabled-chat-handler)
+   - [File Storage](#file-storage)
+7. [Advanced Usage](#advanced-usage)
+   - [Custom FastAPI Setup](#custom-fastapi-setup)
+   - [Dependency Injection](#dependency-injection)
+8. [CLI Usage](#cli-usage)
+9. [Configuration](#configuration)
+10. [API Reference](#api-reference)
+11. [Contributing](#contributing)
+12. [License](#license)
 
-## Installation
+---
 
+## Why Whisk?
+
+Traditional AI microservices can be time-consuming and repetitive to implement. With Whisk, you:
+- **Experiment Faster**: Chat with your jupyter notebook. By creating AI entrypoints into your notebook, you can chat with your code in real time to see how it performs.
+- **Eliminate Boilerplate**: You were going to build a FastAPI server for your AI code anyways, why not make it OpenAI compatible from the start? We already took care of that for you. They're super charged handlers specific for AI use cases.
+- **Simplify your Business App**: AI moves fast, don't tie your business app with AI code just yet. Keep them loosely coupled with whisk so it's easy to swap out later.
+- **Customization**: It's a FastAPI server we all know and love just AI focused. You can bring your own FastAPI application so it's even easier to get started.
+- **Framework Agnostic**: It doesn't matter if it's llama index or langchain or crew. Whisk handles the server boilerplate for you and is strictly AI focused.
+- **OpenAI Client Integrations**: Did we already mention it's OpenAI client compatible? This means you can use OpenWebUI to chat with your jupyter notebook or code.
+
+---
+
+## Quickstart
+
+### Installation
 ```bash
 pip install kitchenai-whisk
 ```
 
-## Quick Start
+### Minimal Chat Handler
 
-Turn your AI functions into model-like APIs with a simple decorator:
+Create a file (e.g., `my_app.py`) with a simple echo handler:
 
 ```python
 from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
-from whisk.kitchenai_sdk.http_schema import (
-    ChatCompletionRequest,
-    ChatCompletionResponse,
-    ChatCompletionChoice,
-    ChatResponseMessage
-)
+from whisk.kitchenai_sdk.schema import ChatInput, ChatResponse
 
 # Initialize the app
-kitchen = KitchenAIApp(namespace="whisk-example-app")
+kitchen = KitchenAIApp(namespace="whisk-example")
 
+# Decorate your handler
 @kitchen.chat.handler("chat.completions")
-async def handle_chat(request: ChatCompletionRequest) -> ChatCompletionResponse:
+async def handle_chat(chat: ChatInput) -> ChatResponse:
     """Simple chat handler that echoes back the last message"""
-    return ChatCompletionResponse(
-        model=request.model,
-        choices=[
-            ChatCompletionChoice(
-                index=0,
-                message=ChatResponseMessage(
-                    role="assistant",
-                    content=f"Echo: {request.messages[-1].content}"
-                ),
-                finish_reason="stop"
-            )
-        ]
+    return ChatResponse(
+        content=f"Echo: {chat.messages[-1].content}",
+        role="assistant"
     )
 ```
 
-Now your handler can be called like a regular OpenAI endpoint:
+### Running Your Whisk App
 
-```python
-response = client.chat.completions.create(
-    model="@whisk-example-app-0.0.1/chat.completions",
-    messages=[{"role": "user", "content": "Hello!"}],
-    metadata={"user_id": "123"},
-)
+#### Option 1: Whisk CLI
+```bash
+# Serve using a module path: <module_name>:<kitchen_app_instance>
+whisk serve my_app:kitchen --port 8000 --reload
 ```
 
-### RAG-enabled Chat Handler
+#### Option 2: Programmatically
+```python
+# run_app.py
+from whisk.router import WhiskRouter
+from whisk.config import WhiskConfig, ServerConfig
+from my_app import kitchen  # your KitchenAIApp
+
+config = WhiskConfig(server=ServerConfig(type="fastapi"))
+router = WhiskRouter(kitchen_app=kitchen, config=config)
+router.run(host="0.0.0.0", port=8000)
+```
+Then just run:
+```bash
+python run_app.py
+```
+
+---
+
+## Using Whisk with OpenWebUI
+
+Spin up an **instant chat interface** with [OpenWebUI](https://github.com/OpenBMB/OpenWebUI):
+
+1. **Pull and run OpenWebUI**:
+   ```bash
+   docker pull openwebui/openwebui
+
+    docker run -d --network=host -v open-webui:/app/backend/data -e OLLAMA_BASE_URL=http://127.0.0.1:11434 --name open-webui --restart always ghcr.io/open-webui/open-webui:main
+
+   ```
+
+2. **Select your Whisk model** in OpenWebUI's model list and start chatting at:
+   ```
+   http://localhost:8000/v1
+   ```
+
+---
+
+## Jupyter Notebook Integration
+
+Experiment with your AI code **directly in Jupyter** using Whisk. Example:
 
 ```python
-from whisk.kitchenai_sdk.schema import (
-    ChatInput, 
-    ChatResponse,
-    DependencyType,
-    SourceNode
-)
+import nest_asyncio
+nest_asyncio.apply()
 
+from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
+from whisk.kitchenai_sdk.schema import ChatInput, ChatResponse
+from whisk.config import WhiskConfig, ServerConfig
+from whisk.router import WhiskRouter
+
+kitchen = KitchenAIApp(namespace="notebook-example")
+
+@kitchen.chat.handler("chat")
+async def handle_chat(chat: ChatInput) -> ChatResponse:
+    return ChatResponse(content="Hello from notebook!", role="assistant")
+
+config = WhiskConfig(server=ServerConfig(type="fastapi"))
+router = WhiskRouter(kitchen_app=kitchen, config=config)
+
+# Run inside the notebook cell
+router.run_in_notebook(host="0.0.0.0", port=8000)
+```
+
+---
+
+## Examples
+
+### RAG-Enabled Chat Handler
+
+Combine your LLM with vector storage:
+
+```python
 @kitchen.chat.handler("chat.rag", DependencyType.VECTOR_STORE, DependencyType.LLM)
 async def rag_handler(chat: ChatInput, vector_store, llm) -> ChatResponse:
-    """RAG-enabled chat handler"""
-    # Get the user's question
     question = chat.messages[-1].content
-    
-    # Search for relevant documents
     retriever = vector_store.as_retriever(similarity_top_k=2)
     nodes = retriever.retrieve(question)
-    
-    # Create context from retrieved documents
+
     context = "\n".join(node.node.text for node in nodes)
-    prompt = f"""Answer based on context: {context}\nQuestion: {question}"""
-    
-    # Get response from LLM
+    prompt = f"Answer based on context:\n{context}\n\nQuestion: {question}"
+
     response = await llm.acomplete(prompt)
-    
-    # Return response with sources
+
     return ChatResponse(
         content=response.text,
         sources=[
@@ -97,330 +166,150 @@ async def rag_handler(chat: ChatInput, vector_store, llm) -> ChatResponse:
                 text=node.node.text,
                 metadata=node.node.metadata,
                 score=node.score
-            ) for node in nodes
+            )
+            for node in nodes
         ]
     )
 ```
+Now your requests to `/v1/chat/completions` can seamlessly retrieve relevant documents before generating a response.
 
-### Storage Handler
+### File Storage
+Implement a custom file storage handler for anything from fine-tuning data to user uploads:
 
 ```python
-from whisk.kitchenai_sdk.schema import (
-    WhiskStorageSchema,
-    WhiskStorageResponseSchema
-)
+from whisk.kitchenai_sdk.schema import StorageRequest, StorageResponse
+import time
+from pathlib import Path
 
 @kitchen.storage.handler("storage")
-async def storage_handler(data: WhiskStorageSchema) -> WhiskStorageResponseSchema:
-    """Storage handler for document ingestion"""
-    if data.action == "list":
-        return WhiskStorageResponseSchema(
-            id=int(time.time()),
-            name="list",
-            files=[]
-        )
-        
-    if data.action == "upload":
-        return WhiskStorageResponseSchema(
-            id=int(time.time()),
-            name=data.filename,
-            label=data.model.split('/')[-1],
-            metadata={
-                "namespace": data.model.split('/')[0],
-                "model": data.model
-            },
-            created_at=int(time.time())
-        )
+async def handle_storage(data: StorageRequest) -> StorageResponse:
+    # Example local file storage
+    file_id = f"file-{int(time.time())}"
+    file_path = Path("uploads") / file_id
+    file_path.write_bytes(data.content)
+
+    # Return structured response 
+    return StorageResponse(
+        file_id=file_id,
+        filename=data.filename,
+        created_at=int(time.time()),
+        metadata={"purpose": data.purpose},
+        deleted=False
+    )
 ```
+Use OpenAI-style file management methods to interact with it.
 
-```python
-import json
+---
 
-from whisk.kitchenai_sdk.http_schema import FileExtraBody   
+## Advanced Usage
 
-file_extra_body = FileExtraBody(
-    model="@whisk-example-app-0.0.1/storage",
-    metadata="user_id=123,other_key=value"  # Changed to string format
-)
+### Custom FastAPI Setup
 
-response = client.files.create(
-    file=open("README.md", "rb"),
-    purpose="chat",
-    extra_body=file_extra_body.model_dump()
-)
-print(response)
-```
-
-## Running Your App
-
-There are several ways to run your Whisk application:
-
-### 1. Using the CLI with Module Path
-
-The most flexible way is to use the CLI with a module path to your app:
-
-```bash
-# Format: whisk serve module.path:app_name
-whisk serve my_app.main:kitchen
-
-# With options
-whisk serve my_app.main:kitchen --port 8080 --reload
-```
-
-You can also specify the app path in your config file:
-
-```yaml
-# whisk.yml
-server:
-  type: fastapi
-  app_path: my_app.main:kitchen  # Module path to your KitchenAI app
-  fastapi:
-    host: 0.0.0.0
-    port: 8000
-```
-
-Then simply run:
-```bash
-whisk serve
-```
-
-The CLI argument takes precedence over the config file setting.
-
-### 2. Running Programmatically
-
-```python
-# In a script
-from whisk.router import WhiskRouter
-from whisk.config import WhiskConfig, ServerConfig
-
-# Create router
-router = WhiskRouter(kitchen_app, config)
-
-# Run with custom host/port
-router.run(host="0.0.0.0", port=8000)
-```
-
-### 3. Using Your Own FastAPI App
-
-```python
-from fastapi import FastAPI
-from whisk.router import WhiskRouter
-
-# Create your FastAPI app
-app = FastAPI()
-
-# Create router with your app
-router = WhiskRouter(
-    kitchen_app=kitchen_app,
-    config=config,
-    fastapi_app=app
-)
-
-# Run the server
-router.run()
-```
-
-## Customizing FastAPI
-
-### Using Your Own FastAPI App
+Attach Whisk routes to your own **FastAPI** application:
 
 ```python
 from fastapi import FastAPI, Depends
-from fastapi.security import OAuth2PasswordBearer
 from whisk.kitchenai_sdk.kitchenai import KitchenAIApp
-from whisk.config import WhiskConfig
-from whisk.router import WhiskRouter
-
-# Create your KitchenAI app
-kitchen_app = KitchenAIApp(namespace="my-app")
-
-# Add your handlers
-@kitchen.chat.handler("chat.completions")
-async def handle_chat(request: ChatCompletionRequest) -> ChatCompletionResponse:
-    """Simple chat handler that echoes back the last message"""
-    return ChatCompletionResponse(
-        model=request.model,
-        choices=[
-            ChatCompletionChoice(
-                index=0,
-                message=ChatResponseMessage(
-                    role="assistant",
-                    content=f"Echo: {request.messages[-1].content}"
-                ),
-                finish_reason="stop"
-            )
-        ]
-    )
-
-# Create your FastAPI app with custom auth
-fastapi_app = FastAPI()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-@fastapi_app.post("/token")
-async def login():
-    return {"access_token": "secret"}
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    if token != "secret":
-        raise HTTPException(status_code=401)
-    return {"user": token}
-
-# Add custom routes before Whisk setup
-@fastapi_app.get("/custom", dependencies=[Depends(get_current_user)])
-async def custom_route():
-    return {"message": "Authenticated route"}
-
-# Create WhiskRouter with your FastAPI app
-config = WhiskConfig(server=ServerConfig(type="fastapi"))
-router = WhiskRouter(
-    kitchen_app=kitchen_app, 
-    config=config,
-    fastapi_app=fastapi_app  # Pass your custom app
-)
-
-# Run the server
-router.run()
-```
-
-### Using Setup Callbacks
-
-```python
-def before_setup(app: FastAPI):
-    """Add routes/middleware before Whisk setup"""
-    # Add auth
-    oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-    
-    @app.post("/token")
-    async def login():
-        return {"access_token": "secret"}
-
-    # Add custom middleware
-    @app.middleware("http")
-    async def add_custom_header(request, call_next):
-        response = await call_next(request)
-        response.headers["Custom"] = "Value"
-        return response
-
-def after_setup(app: FastAPI):
-    """Add routes after Whisk setup"""
-    @app.get("/health")
-    async def health_check():
-        return {"status": "healthy"}
-
-# Create router with callbacks
-router = WhiskRouter(
-    kitchen_app=kitchen_app,
-    config=config,
-    before_setup=before_setup,  # Runs before Whisk routes
-    after_setup=after_setup    # Runs after Whisk routes
-)
-
-# Access FastAPI app directly if needed
-app = router.app
-```
-
-### Running Programmatically
-
-```python
-# In a script
 from whisk.router import WhiskRouter
 from whisk.config import WhiskConfig, ServerConfig
 
-# Create router
-router = WhiskRouter(kitchen_app, config)
+# Create Whisk app
+kitchen = KitchenAIApp(namespace="custom-app")
 
-# Run with custom host/port
-router.run(host="0.0.0.0", port=8000)
+@kitchen.chat.handler("chat.completions")
+async def handle_chat(...):
+    ...
 
+# Create a custom FastAPI app
+fastapi_app = FastAPI()
+
+@fastapi_app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+# Hook Whisk into it
+config = WhiskConfig(server=ServerConfig(type="fastapi"))
+router = WhiskRouter(kitchen_app=kitchen, config=config, fastapi_app=fastapi_app)
+router.run()
 ```
 
-## Dependencies
+### Dependency Injection
 
-Whisk supports dependency injection for handlers:
+Whisk's built-in dependency system lets you register external services, like Vector Stores or custom LLM clients:
 
 ```python
 from whisk.kitchenai_sdk.schema import DependencyType
 
-# Register dependency
 vector_store = MyVectorStore()
-app.register_dependency(DependencyType.VECTOR_STORE, vector_store)
+kitchen.register_dependency(DependencyType.VECTOR_STORE, vector_store)
 
-# Use in handler
 @kitchen.chat.handler("chat.rag", DependencyType.VECTOR_STORE, DependencyType.LLM)
-async def rag_handler(chat: ChatInput, vector_store, llm) -> ChatResponse:
-    # vector_store is automatically injected
-    docs = await vector_store.search(request.messages[-1].content)
-    return {"response": f"Found docs: {docs}"}
+async def rag_handler(chat_input, vector_store, llm):
+    # `vector_store` and `llm` are auto-injected
+    ...
 ```
 
-## Jupyter Notebook Usage
-
-```python
-import nest_asyncio
-nest_asyncio.apply()
-
-# Create and run
-router = WhiskRouter(kitchen, config)
-router.run()
-```
+---
 
 ## CLI Usage
 
-```bash
-# Start server
-whisk serve --config config.yaml
+Create, serve, and manage Whisk projects:
 
-# Initialize new project
+```bash
+# Initialize a new Whisk project
 whisk init my-project
 
-# Run with custom host/port
+# Serve your app with a config file
+whisk serve --config config.yaml
+
+# Customize host/port 
 whisk serve --host 0.0.0.0 --port 8080
 ```
 
+---
+
 ## Configuration
 
+Use a `whisk.yml` or `config.yaml` to define server settings:
+
 ```yaml
-# config.yaml
 server:
   type: fastapi
+  app_path: my_app.py:kitchen  # <module>:<kitchen_app>
   fastapi:
     host: 0.0.0.0
     port: 8000
     prefix: /v1
 
 client:
-  id: my-app
-  type: bento_box
+  id: "my-app"
+  type: "bento_box"
 ```
 
-
+---
 
 ## API Reference
 
-The API follows OpenAI's API structure:
+Whisk follows the OpenAI API structure:
+- **`POST /v1/chat/completions`** - Chat completions  
+- **`GET/POST /v1/files`** - File operations  
+- **`GET /v1/models`** - List available models  
 
-- `/v1/chat/completions` - Chat completions
-- `/v1/files` - File operations
-- `/v1/models` - List available models
+You can integrate with any existing OpenAI-compatible client. Just point it to your Whisk endpoint (e.g., `http://localhost:8000/v1`).
+
+---
 
 ## Contributing
 
-Contributions welcome! Please read our [contributing guidelines](CONTRIBUTING.md).
+We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Feel free to open issues for feature requests or bug reports.
+
+---
 
 ## License
 
-Apache 2.0 License
+Whisk is licensed under the [Apache 2.0 License](LICENSE).  
+© 2024 Whisk. All rights reserved.
 
-Copyright (c) 2024 Whisk
+---
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+**Get whisking**—and free yourself from the boilerplate of AI microservices!
