@@ -40,6 +40,13 @@ Traditional AI microservices can be time-consuming and repetitive to implement. 
 
 ---
 
+## Demo
+
+Chat with your Jupyter Notebook while you build! 
+
+<div style="position: relative; padding-bottom: 51.145833333333336%; height: 0;"><iframe src="https://www.loom.com/embed/92fc161d5b2248df8875e29c874b2aac?sid=e8dbcf45-c97e-4ba0-a040-eee7cd84b4c1" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe></div>
+
+
 ## Quickstart
 
 ### Installation
