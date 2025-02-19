@@ -44,9 +44,7 @@ Traditional AI microservices can be time-consuming and repetitive to implement. 
 
 Chat with your Jupyter Notebook while you build! 
 
-<a href="https://www.loom.com/share/92fc161d5b2248df8875e29c874b2aac?sid=2004e4f2-826b-4552-aa85-42113a272432" target="_blank">
-    <img src="https://cdn.loom.com/sessions/thumbnails/92fc161d5b2248df8875e29c874b2aac-00-00-00.gif" alt="Whisk Demo" style="width: 100%; height: auto;">
-</a>
+[Loom Video ](https://www.loom.com/share/92fc161d5b2248df8875e29c874b2aac?sid=4d588361-1a07-4079-ab84-70225dac9125)
 
 ## Quickstart
 
