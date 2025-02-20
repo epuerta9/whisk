@@ -1,8 +1,10 @@
-from typing import Dict, Any, Callable, Union
+from typing import Dict, Any, Callable, Union, AsyncGenerator
 from functools import wraps
 from ..base import TaskRegistry
 from ..schema import ChatInput, ChatResponse, DependencyType
 from ..http_schema import ChatCompletionResponse, ChatResponseMessage, ChatCompletionChoice
+import asyncio
+import time
 
 class ChatTask(TaskRegistry):
     """Chat task registry"""
@@ -13,10 +15,10 @@ class ChatTask(TaskRegistry):
 
     def handler(self, name: str, *dependencies: Union[DependencyType, str]):
         """Decorator for simplified chat handlers"""
-        def decorator(func: Callable[[ChatInput], ChatResponse]):
+        def decorator(func: Callable[[ChatInput], Union[ChatResponse, AsyncGenerator]]):
             @wraps(func)
             async def wrapper(request: Any):
-                # Inject requested dependencies
+                # Inject dependencies
                 kwargs = {}
                 if self._manager:
                     for dep in dependencies:
@@ -26,65 +28,119 @@ class ChatTask(TaskRegistry):
                         else:
                             raise KeyError(f"Required dependency {dep} not found")
 
-                # If request is already a ChatCompletionResponse, return it directly
-                if isinstance(request, ChatCompletionResponse):
-                    return request
-
-                # Convert OpenAI request to simplified input
+                # Convert request to ChatInput
                 chat_input = ChatInput.from_request(request)
                 
-                # Call handler with simplified input and dependencies
-                response = await func(chat_input, **kwargs)
+                # Call handler - don't await yet
+                response = func(chat_input, **kwargs)
                 
-                # If response is already in OpenAI format, return it directly
-                if isinstance(response, ChatCompletionResponse):
-                    return response
-
-                # Get content from response
-                if hasattr(response, 'content'):
-                    content = response.content
-                elif isinstance(response, dict):
-                    if 'choices' in response:
-                        choice = response['choices'][0]
-                        if isinstance(choice, dict) and 'message' in choice:
-                            content = choice['message']['content']
-                        elif isinstance(choice, dict):
-                            content = choice.get('content', '')
-                        else:
-                            content = choice.message.content
-                    elif 'content' in response:
-                        content = response['content']
+                # Handle streaming responses
+                if request.stream:
+                    # For streaming, we want the async generator
+                    if hasattr(response, '__aiter__'):
+                        # Return async generator for streaming
+                        async def stream_generator():
+                            chunk_id = f"chatcmpl-{int(time.time())}"
+                            async for chunk in response:
+                                if isinstance(chunk, ChatResponse):
+                                    yield chunk.to_openai_chunk(chunk_id, model=request.model)
+                                else:
+                                    yield ChatResponse(content=str(chunk)).to_openai_chunk(chunk_id, model=request.model)
+                            # Send final chunk
+                            yield {
+                                "id": chunk_id,
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": request.model,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {},
+                                    "finish_reason": "stop"
+                                }]
+                            }
+                        return stream_generator()
                     else:
-                        content = "No content found"  # Fallback
-                else:
-                    content = response.choices[0].message.content
-
-                # Convert simplified response to OpenAI format
-                openai_response = ChatCompletionResponse(
-                    model=request.model,
-                    choices=[
-                        ChatCompletionChoice(
-                            index=0,
-                            message=ChatResponseMessage(
-                                role="assistant",
-                                content=content
-                            ),
-                            finish_reason="stop"
-                        )
-                    ]
-                )
-
-                # Include sources in response metadata if available and requested
-                if hasattr(response, 'sources') and response.sources and (
-                    request.metadata and request.metadata.get("include_sources", False)
-                ):
-                    openai_response.metadata = {
-                        "sources": [source.model_dump() for source in response.sources]
-                    }
+                        # If it's a coroutine, await it and wrap in generator
+                        response = await response
+                        async def single_chunk_generator():
+                            chunk_id = f"chatcmpl-{int(time.time())}"
+                            if isinstance(response, ChatResponse):
+                                yield response.to_openai_chunk(chunk_id, model=request.model)
+                            else:
+                                yield ChatResponse(content=str(response)).to_openai_chunk(chunk_id, model=request.model)
+                            # Send final chunk
+                            yield {
+                                "id": chunk_id,
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": request.model,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {},
+                                    "finish_reason": "stop"
+                                }]
+                            }
+                        return single_chunk_generator()
                 
-                return openai_response
-            
-            # Register the wrapped handler
+                # For non-streaming, await if it's a coroutine
+                if asyncio.iscoroutine(response):
+                    response = await response
+                
+                # Handle non-streaming responses
+                if isinstance(response, ChatCompletionResponse):
+                    # Already in correct format
+                    return response
+                elif isinstance(response, ChatResponse):
+                    # Convert ChatResponse to ChatCompletionResponse
+                    return ChatCompletionResponse(
+                        model=request.model,
+                        choices=[
+                            ChatCompletionChoice(
+                                index=0,
+                                message=ChatResponseMessage(
+                                    role=response.role,
+                                    content=response.content,
+                                    name=response.name
+                                ),
+                                finish_reason="stop"
+                            )
+                        ],
+                        metadata={"sources": [s.model_dump() for s in response.sources]} if response.sources else None
+                    )
+                elif isinstance(response, dict):
+                    # If it's a simple dict with just content, convert to proper format
+                    if "response" in response:
+                        return ChatCompletionResponse(
+                            model=request.model,
+                            choices=[
+                                ChatCompletionChoice(
+                                    index=0,
+                                    message=ChatResponseMessage(
+                                        role="assistant",
+                                        content=response["response"]
+                                    ),
+                                    finish_reason="stop"
+                                )
+                            ]
+                        )
+                    # Otherwise try to convert dict to ChatCompletionResponse directly
+                    return ChatCompletionResponse(**response)
+                else:
+                    # Convert any other response to ChatCompletionResponse
+                    return ChatCompletionResponse(
+                        model=request.model,
+                        choices=[
+                            ChatCompletionChoice(
+                                index=0,
+                                message=ChatResponseMessage(
+                                    role="assistant",
+                                    content=str(response)
+                                ),
+                                finish_reason="stop"
+                            )
+                        ]
+                    )
+                
             return self.register_task(name, wrapper)
         return decorator
 

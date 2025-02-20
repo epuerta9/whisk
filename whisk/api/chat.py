@@ -70,44 +70,43 @@ def parse_system_metadata(messages: List[Dict[str, str]]) -> Dict[str, Any]:
 
 async def stream_response(task: Callable, request: ChatCompletionRequest):
     """Stream chat completion response"""
-    response = await task(request)
+    response = task(request)  # Don't await yet
     
-    # Handle dict response
-    if isinstance(response, dict):
-        response = ChatCompletionResponse(**response)
-    
-    # Send initial chunk
-    for choice in response.choices:
-        chunk = {
-            "id": response.id,
-            "object": "chat.completion.chunk",
-            "created": response.created,
-            "model": response.model,
-            "choices": [{
-                "index": choice.index if hasattr(choice, 'index') else 0,
-                "delta": {
-                    "role": "assistant",
-                    "content": choice.message.content if hasattr(choice, 'message') else choice["message"]["content"]
-                },
-                "finish_reason": None
-            }]
-        }
-        yield f"data: {json.dumps(chunk)}\n\n"
-    
-    # Send final chunk with finish_reason
-    final_chunk = {
-        "id": response.id,
-        "object": "chat.completion.chunk",
-        "created": response.created,
-        "model": response.model,
-        "choices": [{
-            "index": 0,
-            "delta": {},
-            "finish_reason": "stop"
-        }]
-    }
-    yield f"data: {json.dumps(final_chunk)}\n\n"
-    yield "data: [DONE]\n\n"
+    # If it's a coroutine (non-streaming response), await it
+    if asyncio.iscoroutine(response):
+        response = await response
+        
+    # If it's an async generator, stream it
+    if hasattr(response, '__aiter__'):
+        try:
+            async for chunk in response:
+                # If chunk is already formatted as OpenAI chunk, send it directly
+                if isinstance(chunk, dict) and "choices" in chunk:
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                # Otherwise format it as a chunk
+                else:
+                    response_chunk = {
+                        "id": f"chatcmpl-{int(time.time())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": request.model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "content": chunk.content if hasattr(chunk, 'content') else str(chunk)
+                            },
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
+            
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            print(f"Streaming error: {str(e)}")
+            raise
+    else:
+        raise ValueError("Expected streaming response but got non-streaming response")
 
 @router.post(
     "/chat/completions",

@@ -1,8 +1,9 @@
 from pydantic import BaseModel, ConfigDict, computed_field, Field, PrivateAttr
-from typing import List, Optional, Dict, Any, Callable, Union
+from typing import List, Optional, Dict, Any, Callable, Union, AsyncGenerator
 from enum import StrEnum, auto
 import time
 from .http_schema import Message
+import asyncio
 
 
 class TokenCountSchema(BaseModel):
@@ -360,6 +361,42 @@ class ChatResponse(BaseModel):
             }
         
         return response
+
+    @classmethod
+    async def stream(cls, content_stream, **kwargs) -> AsyncGenerator["ChatResponse", None]:
+        """Create a streaming response"""
+        async for chunk in content_stream:
+            # Handle different types of chunks
+            if isinstance(chunk, str):
+                content = chunk
+            elif hasattr(chunk, 'content'):
+                content = chunk.content
+            else:
+                content = str(chunk)
+                
+            yield cls(
+                content=content,
+                role=kwargs.get('role', 'assistant'),
+                name=kwargs.get('name'),
+                sources=kwargs.get('sources')
+            )
+
+    def to_openai_chunk(self, chunk_id: str, model: str = None) -> Dict:
+        """Convert to OpenAI chat completion chunk format"""
+        return {
+            "id": chunk_id,
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model,  # Include model in the response
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "role": self.role,
+                    "content": self.content
+                },
+                "finish_reason": None
+            }]
+        }
 
 class StorageRequest(BaseModel):
     """Storage task request"""
