@@ -1,6 +1,7 @@
 import asyncio
 import nest_asyncio
 import uvicorn
+import json
 
 from fastapi import FastAPI, HTTPException, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,7 @@ from typing import Optional, Callable
 from .config import WhiskConfig
 from .kitchenai_sdk.kitchenai import KitchenAIApp
 from .dependencies import set_kitchen_app
+from .api.commands import CommandMiddleware
 
 import logging
 logger = logging.getLogger(__name__)
@@ -24,7 +26,8 @@ class WhiskRouter:
         config: WhiskConfig,
         fastapi_app: Optional[FastAPI] = None,
         before_setup: Optional[Callable[[FastAPI], None]] = None,
-        after_setup: Optional[Callable[[FastAPI], None]] = None
+        after_setup: Optional[Callable[[FastAPI], None]] = None,
+        command_mode: bool = False  # Add command mode flag
     ):
         """
         Initialize WhiskRouter
@@ -35,10 +38,13 @@ class WhiskRouter:
             fastapi_app: Optional FastAPI app to use instead of creating new one
             before_setup: Optional callback to run before setting up routes
             after_setup: Optional callback to run after setting up routes
+            command_mode: Flag to enable command mode
         """
         self.kitchen_app = kitchen_app
         self.config = config
         self.app = fastapi_app or FastAPI()
+        self.command_mode = command_mode
+        self.command_middleware = CommandMiddleware(kitchen_app)
         
         # Add CORS middleware
         self.app.add_middleware(
@@ -48,6 +54,47 @@ class WhiskRouter:
             allow_methods=["*"],  # Allows all methods
             allow_headers=["*"],  # Allows all headers
         )
+        
+        # Set up command mode middleware
+        @self.app.middleware("http")
+        async def command_mode_middleware(request: Request, call_next):
+            if request.url.path == "/v1/chat/completions":
+                # Only process if command_mode was enabled at startup
+                if not self.command_mode:
+                    return await call_next(request)
+                    
+                # Check if it's a JSON request
+                if request.headers.get("content-type") != "application/json":
+                    return await call_next(request)
+                    
+                try:
+                    body = await request.json()
+                except json.JSONDecodeError:
+                    return await call_next(request)
+                    
+                if not body.get("messages"):
+                    return await call_next(request)
+                    
+                last_message = body["messages"][-1]["content"]
+                
+                # Check for command mode toggle in message
+                if last_message == ":command":
+                    return self.command_middleware.create_response(
+                        "Entering command mode. Type :exit to leave or /help for commands."
+                    )
+                
+                # Check for command mode exit in message
+                if last_message == ":exit":
+                    self.command_mode = False
+                    return self.command_middleware.create_response("Exiting command mode.")
+                    
+                # If in command mode and message starts with /, handle as command
+                if last_message.startswith("/"):
+                    command_response = await self.command_middleware.handle_command(body)
+                    if command_response:
+                        return command_response
+            
+            return await call_next(request)
         
         # Set up the kitchen app in the dependency system
         set_kitchen_app(kitchen_app)

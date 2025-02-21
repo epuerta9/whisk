@@ -1,22 +1,31 @@
 from openai import AsyncOpenAI
 import asyncio
 
-async def test_streaming():
+async def test_commands():
     client = AsyncOpenAI(
         base_url="http://localhost:8000/v1",
         api_key="not-needed"
     )
 
-    stream = await client.chat.completions.create(
-        model="@stream-example/chat.interactive",
-        messages=[{"role": "user", "content": "Hello world! How are you?"}],
-        stream=True
-    )
+    # Test some commands
+    commands = ["/help", "/capabilities", "/chat", "/exit"]
+    
+    for cmd in commands:
+        print(f"\nSending command: {cmd}")
+        response = await client.chat.completions.create(
+            model="@stream-example/chat.completions",
+            messages=[{"role": "user", "content": cmd}],
+            headers={"X-Command-Mode": "true"}  # Enable command mode
+        )
+        print(response.choices[0].message.content)
 
-    async for chunk in stream:
-        if chunk.choices[0].delta.content:
-            print(chunk.choices[0].delta.content, end="", flush=True)
-    print()
+    # After exiting command mode, test normal chat
+    print("\nTesting normal chat after exiting command mode:")
+    response = await client.chat.completions.create(
+        model="@stream-example/chat.completions",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
+    print(response.choices[0].message.content)
 
 if __name__ == "__main__":
-    asyncio.run(test_streaming()) 
+    asyncio.run(test_commands()) 

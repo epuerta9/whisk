@@ -27,13 +27,13 @@ class CommandMiddleware:
         }
         logger.info(f"Command middleware initialized with commands: {list(self.commands.keys())}")
 
-    async def handle_command(self, request: ChatCompletionRequest) -> Optional[ChatCompletionResponse]:
+    async def handle_command(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Check if message is a command and handle it"""
-        if not request.messages or not request.messages[-1].content:
-            logger.debug("No messages or empty content")
+        if not request.get("messages"):
+            logger.debug("No messages in request")
             return None
             
-        command = request.messages[-1].content.strip()
+        command = request["messages"][-1]["content"].strip()
         logger.info(f"Checking command: {command}")
         
         if not command.startswith("/"):
@@ -56,35 +56,21 @@ class CommandMiddleware:
 
     def create_response(self, content: str) -> Dict[str, Any]:
         """Create a chat completion response with given content"""
-        logger.info(f"Creating command response with content: {content}")
-        
         timestamp = int(time.time())
-        response = {
+        return {
             "id": f"chatcmpl-{timestamp}",
             "object": "chat.completion",
             "created": timestamp,
-            "model": "gpt-3.5-turbo",
-            "system_fingerprint": "fp_44709d6fcb",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": content
-                    },
-                    "logprobs": None,
-                    "finish_reason": "stop"
-                }
-            ],
-            "usage": {
-                "prompt_tokens": 0,
-                "completion_tokens": len(content.split()),
-                "total_tokens": len(content.split())
-            }
+            "model": "command-mode",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content
+                },
+                "finish_reason": "stop"
+            }]
         }
-        
-        logger.info(f"Formatted response: {json.dumps(response, indent=2)}")
-        return response
 
     async def show_capabilities(self, _: str) -> ChatCompletionResponse:
         """Show all app capabilities"""
@@ -161,6 +147,10 @@ class CommandMiddleware:
     async def show_help(self, _: str) -> ChatCompletionResponse:
         """Show help for available commands"""
         help_text = """Available Commands:
+:command    - Enter command mode
+:exit       - Exit command mode
+
+Commands available in command mode:
 /capabilities - Show all app capabilities and handlers
 /show        - Show detailed information about the app
 /chat        - List chat handlers

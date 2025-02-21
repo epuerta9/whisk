@@ -58,38 +58,18 @@ async def interactive_stream(chat: ChatInput) -> AsyncGenerator[ChatResponse, No
 
 @kitchen.chat.handler("chat.completions")
 async def completions(chat: ChatInput) -> ChatResponse:
-    """Interactive streaming chat handler that responds to user input"""
-    # Get the user's message
-    user_message = chat.messages[-1].content.lower()
-    
-    # Different responses based on user input
-    if "hello" in user_message:
-        responses = [
-            "Hi there! ",
-            "Nice to meet you! ",
-            "I'm a streaming bot. ",
-            "How can I help you today?"
-        ]
-    elif "help" in user_message:
-        responses = [
-            "I can help you with: ",
-            "1. Streaming examples ",
-            "2. Chat responses ",
-            "3. Basic demonstrations"
-        ]
-    else:
-        responses = [
-            "I heard you say: ",
-            user_message,
-            ". ",
-            "Try saying 'hello' or 'help' for more options!"
-        ]
-    
-    # Stream each part of the response
-    return ChatResponse(content="I'm a regular chat response", role="assistant")
+    """Regular chat handler that shows if we're not in command mode"""
+    return ChatResponse(
+        content="Regular chat mode: " + chat.messages[-1].content,
+        role="assistant"
+    )
 
 # Run the server
 if __name__ == "__main__":
     config = WhiskConfig(server=ServerConfig(type="fastapi"))
-    router = WhiskRouter(kitchen_app=kitchen, config=config)
+    router = WhiskRouter(
+        kitchen_app=kitchen, 
+        config=config,
+        command_mode=True  # Start in command mode by default
+    )
     router.run(host="0.0.0.0", port=8000)
