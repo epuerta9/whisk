@@ -28,6 +28,8 @@ Whisk removes the boilerplate of writing AI microservices—so you can focus on 
 
 ---
 
+![](./docs/images/jupyter.gif)
+
 ## Why Whisk?
 
 Traditional AI microservices can be time-consuming and repetitive to implement. With Whisk, you:
